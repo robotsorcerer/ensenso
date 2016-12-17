@@ -59,8 +59,8 @@ gateway: [Leave blank]
 Below is a visual description of a typical setup
 
 <div class="fig figcenter fighighlight">
-	<img src="/images/sys_network.png" height="300" width="45%" align="middle" >
-	<img src="/images/ensenso_conf.png" height="300"  width="45%" align="right" style="border-left: 1px solid black;">
+	<img src="/images/sys_network.png" height="350" width="45%" align="middle" >
+	<img src="/images/ensenso_conf.png" height="350"  width="45%" align="right" style="border-left: 1px solid black;">
 	</br>
 	<div class="figcaption" align="middle"></div>
 </div>
@@ -93,6 +93,7 @@ If you encounter problems during set-up, it might be worth the while runing the 
 
 
 ##### Bashir 
+ =======
 
 * Create your own branch off the master fork and process your clouds.
 
