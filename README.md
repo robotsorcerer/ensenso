@@ -10,9 +10,13 @@
 - [Dependencies](#dependencies)
 
 	-[ROS Indigo/Jade/Kinetic](#ros-indigo/jade/kinetic)
+
 	-[uEye Driver](#ueye-driver)
+
 	-[EnsensoSDK](#ensensosdk)
+
 	-[PCL (Point Clouds Library)](#pcl-(point-clouds-library))
+	
 	-[Optional Dependencies](#optional-dependencies)
 	
 - [Network Configuration](#network-configuration)
