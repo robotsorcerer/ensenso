@@ -8,16 +8,11 @@
 ####[Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
 - [Dependencies](#dependencies)
-
-	-[ROS Indigo/Jade/Kinetic](#ros-indigo/jade/kinetic)
-
-	-[uEye Driver](#ueye-driver)
-
-	-[EnsensoSDK](#ensensosdk)
-
-	-[PCL (Point Clouds Library)](#pcl-(point-clouds-library))
-	
-	-[Optional Dependencies](#optional-dependencies)
+  -[ROS Indigo/Jade/Kinetic](#ros-indigo/jade/kinetic)
+  -[uEye Driver](#ueye-driver)
+  -[EnsensoSDK](#ensensosdk)
+  -[PCL (Point Clouds Library)](#pcl-(point-clouds-library))	
+  -[Optional Dependencies](#optional-dependencies)
 	
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
