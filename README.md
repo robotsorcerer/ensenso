@@ -26,7 +26,7 @@ The sensor captures a single 3D profile for each camera exposure. The Ensenso ca
 	
 For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera. This code is C++-11 compatible. It would not compile without enabling the c++ 11 options on your compiler. A minimum of g++ 4.8 or VS 2012 is required to run this code.
 
-##### [ROS](#ros)
+##### ROS
 
  ROS Indigo/Jade/Kinetic. Possible backwards compatibility with ROS Hydro but not tested.
 
