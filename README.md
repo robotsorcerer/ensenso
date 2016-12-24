@@ -8,22 +8,24 @@
 ####[Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
 - [Dependencies](#dependencies)
-	-[ROS Indigo/Jade/Kinetic](#optional-dependencies)
-	-[uEye Driver](#optional-dependencies)
-	-[EnsensoSDK](#ensens0sdk)
+
+	-[ROS Indigo/Jade/Kinetic](#ros-indigo/jade/kinetic)
+	-[uEye Driver](#ueye-driver)
+	-[EnsensoSDK](#ensensosdk)
 	-[PCL (Point Clouds Library)](#pcl-(point-clouds-library))
 	-[Optional Dependencies](#optional-dependencies)
+	
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
 - [@TODOs](#@todos)
 - [FAQs](#faqs)
 
 #### Introduction
-The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured.
+The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured. 
 
 #### Dependencies
 	
-For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera.
+For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera. This code is C++-11 compatible. It would not compile without enabling the c++ 11 options on your compiler. A minimum of g++ 4.8 or VS 2012 is required to run this code.
 
 ##### [ROS Indigo/Jade/Kinetic](http://wiki.ros.org/ROS/Installation)
 

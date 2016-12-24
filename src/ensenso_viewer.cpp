@@ -1,91 +1,98 @@
-/*
- * Software License Agreement (BSD License)
- *
- *  Point Cloud Library (PCL) - www.pointclouds.org
- *  Copyright (c) 2014-, Open Perception, Inc.
- *
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *   * Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *   * Redistributions in binary form must reproduce the above
- *     copyright notice, this list of conditions and the following
- *     disclaimer in the documentation and/or other materials provided
- *     with the distribution.
- *   * Neither the name of the copyright holder(s) nor the names of its
- *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *  POSSIBILITY OF SUCH DAMAGE.
- *
- *  Author: Victor Lamoine (victor.lamoine@gmail.com)
- *
- *  olalekan ogunmolu. Dec 16, 2016 (patlekano@gmail.com)
- */
-
+/*  
+*   MIT License
+*   
+*   Copyright (c) December 2016 
+*
+*   Permission is hereby granted, free of charge, to any person obtaining a copy
+*   of this software and associated documentation files (the "Software"), to deal
+*   in the Software without restriction, including without limitation the rights
+*   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+*   copies of the Software, and to permit persons to whom the Software is
+*   furnished to do so, subject to the following conditions:
+*   
+*   The above copyright notice and this permission notice shall be included in all
+*   copies or substantial portions of the Software.
+*   
+*   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+*   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+*   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+*   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+*   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+*   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+*   SOFTWARE.
+*
+* 
+*  Author: Olalekan P. Ogunmolu
+*/
+#include <ros/ros.h>
 #include <iostream>
-#include <pcl/io/ensenso_grabber.h>
-#include <pcl/visualization/cloud_viewer.h>
+#include <vector>
+#include <memory>
+#include <chrono>
+#include <thread>
+#include <algorithm>
 
-/** @brief Convenience typedef */
-typedef pcl::visualization::CloudViewer CloudViewer;
+/*pcl and cv headers*/
+#include <ensenso/ensenso_headers.h>
 
-/** @brief Convenience typedef for XYZ point clouds */
-typedef pcl::PointCloud<pcl::PointXYZ> PointCloudXYZ;
+/*typedefs*/
+using PointT = pcl::PointXYZ;
+using PointCloudT = pcl::PointCloud<PointT>;
+using  CloudViewer = pcl::visualization::CloudViewer;
+using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback 
 
-/** @brief CloudViewer pointer */
-boost::shared_ptr<CloudViewer> viewer_ptr;
-
-/** @brief PCL Ensenso object pointer */
+/*pointers*/
+std::shared_ptr<CloudViewer> viewer_ptr;
 pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
-/** @brief Process and/or display Ensenso grabber clouds
- * @param[in] cloud Ensenso cloud */
-void
-grabberCallback (const PointCloudXYZ::Ptr& cloud)
+void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::shared_ptr<PairOfImages>& images)
 {
-  if (!viewer_ptr->wasStopped ())
-    viewer_ptr->showCloud (cloud);
+  if (!viewer_ptr->wasStopped ())  viewer_ptr->showCloud (cloud);
+  unsigned char *l_image_array = reinterpret_cast<unsigned char *> (&images->first.data[0]);
+  unsigned char *r_image_array = reinterpret_cast<unsigned char *> (&images->second.data[0]);
+
+  std::cout << "Encoding: " << images->first.encoding << std::endl;
+  int type = getOpenCVType (images->first.encoding);
+  cv::Mat l_image (images->first.height, images->first.width, type, l_image_array);
+  cv::Mat r_image (images->first.height, images->first.width, type, r_image_array);
+  cv::Mat im (images->first.height, images->first.width * 2, type);
+
+  im.adjustROI (0, 0, 0, -images->first.width);
+  l_image.copyTo (im);
+  im.adjustROI (0, 0, -images->first.width, images->first.width);
+  r_image.copyTo (im);
+  im.adjustROI (0, 0, images->first.width, 0);
+  cv::imshow ("Ensenso images", im);
+  cv::waitKey (2);
 }
 
-/** @brief Main function
- * @return Exit status */
-int
-main (void)
+int main (void)
 {
-  viewer_ptr.reset (new CloudViewer ("Ensenso 3D cloud viewer"));
+  viewer_ptr.reset (new CloudViewer ("Ensenso viewer"));
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort ();
   ensenso_ptr->openDevice ();
   ensenso_ptr->enumDevices ();
 
-  boost::function<void
-  (const PointCloudXYZ::Ptr&)> f = boost::bind (&grabberCallback, _1);
+  //ensenso_ptr->initExtrinsicCalibration (5); // Disable projector if you want good looking images.
+
+  boost::function<void(const boost::shared_ptr<PointCloudT>&, const boost::shared_ptr<PairOfImages>&)> f = boost::bind(&grabberCallback, _1, _2);
   ensenso_ptr->registerCallback (f);
+
+  cv::namedWindow("Ensenso Images", cv::WINDOW_NORMAL);
   ensenso_ptr->start ();
 
   while (!viewer_ptr->wasStopped ())
   {
-    boost::this_thread::sleep (boost::posix_time::milliseconds (1000));
-    std::cout << "FPS: " << ensenso_ptr->getFramesPerSecond () << std::endl;
+
+    ROS_INFO("FPS: %f\n", ensenso_ptr->getFramesPerSecond ());
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
 
+  ensenso_ptr->stop ();
   ensenso_ptr->closeDevice ();
-  return (0);
+  ensenso_ptr->closeTcpPort ();
+
+  return EXIT_SUCCESS;
 }
 

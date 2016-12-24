@@ -34,14 +34,13 @@ find_package(catkin REQUIRED COMPONENTS
   rostime  
 )
 
-find_package(Ensenso )
+find_package(Ensenso)
 find_package(MySQL REQUIRED)
+find_package(OpenCV REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-#  LIBRARIES ensenso
    CATKIN_DEPENDS roscpp rospy sensor_msgs
-#  DEPENDS system_lib
 )
 
 ###########
@@ -52,7 +51,6 @@ set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${ensenso_INCLUDE_DIRS}
-  ${PCL_INCLUDE_DIRS} 
   ${MYSQL_INCLUDE_DIRECTORIES}
 )
 
@@ -61,39 +59,22 @@ message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
 if(ENSENSO_FOUND)
   message(STATUS "Ensenso SDK found")
 
-  ## Declare a C++ library
-  # add_library(ensenso
-  #   src/${PROJECT_NAME}/ensenso.cpp
-  # )
-  include_directories(${ENSENSO_INCLUDE_DIRS})
+  include_directories(${ENSENSO_INCLUDE_DIRS}
+  					  ${PCL_INCLUDE_DIRS} 
+  					  )
+  link_directories(${PCL_LIBRARY_DIRS})
+  add_definitions(${PCL_DEFINITIONS})
 
-  add_library(ensenso_grabber STATIC
-    src/ensenso_grabber.cpp)
-
-  target_link_libraries(ensenso_grabber
-    ${PCL_LIBRARIES}
-    ${EIGEN_LIBRARIES}
-    ${ENSENSO_LIBRARY}
-    ${catkin_LIBRARIES}
-    )
-
-  add_library(ensenso_interface STATIC
-    src/ensenso_interface.cpp
-    )
-
-  target_link_libraries(ensenso_interface
-    ${PCL_LIBRARIES}
-    ${EIGEN_LIBRARIES}
-    ${ENSENSO_LIBRARY}
-    ${catkin_LIBRARIES}
-    )
+  ## Declare executable source files
+  set(viewer_files src/ensenso_viewer 
+  					)
 
   ## Declare a C++ executable
-  add_executable(ensenso_viewer src/ensenso_viewer.cpp)
+  add_executable(ensenso_viewer ${viewer_files})
 
   ## Specify libraries to link a library or executable target against
   target_link_libraries(ensenso_viewer
-    ${catkin_LIBRARIES} pcl_common pcl_io pcl_visualization
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
   )
 
 else(ENSENSO_FOUND)
