@@ -99,13 +99,11 @@ If you run into further issues, feel free to open an issues ticket or ping me [@
 If you used `ensenso` in your work, please cite it.
 
 ```tex
-@misc{ensenso,
-  author = {Ogunmolu, Olalekan},
+@electronic{ensenso,
+  author = {Ogunmolu, Olalekan P.},
   title = {{ensenso pointclouds in C++}},
-  organization = {SEnsing, Robotics, Vision, Control and Estimation Lab},
-  address = {University of Texas at Dallas},
-  year = {2015},
-  howpublished = {\url{https://github.com/lakehanne/ensenso}},
-  note = {Accessed December 24, 2015}
+  year = {2016},
+  url =  {\url{https://github.com/lakehanne/ensenso}},
+  note = {Accessed December 24, 2016}
 }
 ```
