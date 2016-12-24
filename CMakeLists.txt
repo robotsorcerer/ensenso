@@ -67,7 +67,7 @@ if(ENSENSO_FOUND)
 
   ## Declare executable source files
   set(viewer_files src/ensenso_viewer 
-  					)
+  					src/factory_functions.cxx)
 
   ## Declare a C++ executable
   add_executable(ensenso_viewer ${viewer_files})

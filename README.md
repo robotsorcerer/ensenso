@@ -88,23 +88,6 @@ If you encounter problems during set-up, it might be worth the while runing the 
 3. All things being equal, you should be presented with a pcl window that stream the frames that are grabbed to your pcl cloud viewer
 
 
-#### @TODOs
-
-##### Lekan 
- =====
-
- *	Segment profile map of head and find rpy and cartesian coordinates of head pose
-
- *  Publish clouds to rviz for onwards visualization
-
-
-##### Bashir 
- =======
-
-* Create your own branch off the master fork and process your clouds.
-
-#### FAQS
-
 ##### I am having issues connecting to the sensor even though my code compiles
 
 Be sure the id of the sensor is properly set using the `ids camera manager` configuration utility that ships with [ueye](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You can find this in the images folder of this package.
@@ -115,3 +98,19 @@ Please follow the advice listed in the Installation section
 
 ##### Other queries
 If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble) on twitter.
+
+###Citation
+
+If you used `ensenso` in your work, please cite it.
+
+```tex
+@misc{ensenso,
+  author = {Ogunmolu, Olalekan},
+  title = {{ensenso pointclouds in C++}},
+  organization = {SEnsing, Robotics, Vision, Control and Estimation Lab},
+  address = {University of Texas at Dallas},
+  year = {2015},
+  howpublished = {\url{https://github.com/lakehanne/ensenso}},
+  note = {Accessed December 24, 2015}
+}
+```
