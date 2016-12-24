@@ -8,10 +8,10 @@
 ####[Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
 - [Dependencies](#dependencies)
-  - [ROS Indigo/Jade/Kinetic](#ros-indigo/jade/kinetic)
+  - [ROS](#ros)
   - [uEye Driver](#ueye-driver)
   - [EnsensoSDK](#ensensosdk)
-  - [PCL (Point Clouds Library)](#pcl-(point-clouds-library))	
+  - [Point Clouds Library](#point-clouds-library)	
   - [Optional Dependencies](#optional-dependencies)
 	
 - [Network Configuration](#network-configuration)
@@ -26,9 +26,9 @@ The sensor captures a single 3D profile for each camera exposure. The Ensenso ca
 	
 For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera. This code is C++-11 compatible. It would not compile without enabling the c++ 11 options on your compiler. A minimum of g++ 4.8 or VS 2012 is required to run this code.
 
-##### [ROS Indigo/Jade/Kinetic](http://wiki.ros.org/ROS/Installation)
+##### [ROS](#ros)
 
-  Possible backwards compatibility with ROS Hydro.
+ ROS Indigo/Jade/Kinetic. Possible backwards compatibility with ROS Hydro but not tested.
 
 ##### uEye Driver
 
@@ -38,7 +38,7 @@ For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A
 
   After the uEye driver installation is complete, download the latest EnsensoSDK software release from [ensenso download](www.ensenso.com/download) and follow the instructions on screen to install the software.
 
-#####   PCL (Point Clouds Library)
+#####   Point Clouds Library
 
   The sensor requires pcl-1.8.0.  Clone the 1.8.0 trunk from the [pcl github repo](https://github.com/PointCloudLibrary/pcl/tree/pcl-1.8.0), then follow the readme instructions to install. A good place to install might be in your Documents directory. After installing, be sure to set the directory of the cmake pcl config file to that where the libraries are installed in the `CMakeLists.txt`. For example, the config file could be at `/usr/local/share/pcl-1.8/PCLConfig.cmake`. Go to the CMakeLists.txt file within the root directory of this project and amend the PCL directory/path to the one where your installer saves it (you can easily find this in the `installer_manifest.txt` file of your build directory).
 
