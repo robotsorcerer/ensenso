@@ -16,8 +16,8 @@
 	
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
-- [@TODOs](#@todos)
 - [FAQs](#faqs)
+- [Citation](#citation)
 
 #### Introduction
 The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured. 
@@ -82,7 +82,7 @@ If you encounter problems during set-up, it might be worth the while runing the 
 
 3. All things being equal, you should be presented with a pcl window that stream the frames that are grabbed to your pcl cloud viewer
 
-
+#### FAQs
 ##### I am having issues connecting to the sensor even though my code compiles
 
 Be sure the id of the sensor is properly set using the `ids camera manager` configuration utility that ships with [ueye](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You can find this in the images folder of this package.
