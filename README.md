@@ -92,7 +92,7 @@ Be sure the id of the sensor is properly set using the `ids camera manager` conf
 Please follow the advice listed in the Installation section
 
 ##### Other queries
-If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble) on twitter.
+If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble).
 
 ###Citation
 
