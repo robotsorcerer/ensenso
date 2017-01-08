@@ -32,6 +32,15 @@
 #include <thread>
 #include <algorithm>
 
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/image_encodings.h>
+
+#include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
+#include <pcl_conversions/pcl_conversions.h>
+
 /*pcl and cv headers*/
 #include <ensenso/ensenso_headers.h>
 
@@ -41,6 +50,17 @@ using PointCloudT = pcl::PointCloud<PointT>;
 using  CloudViewer = pcl::visualization::CloudViewer;
 using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback 
 
+/*message filters typedefs*/
+/*using imageMessageSub = message_filters::Subscriber<sensor_msgs::Image> ;
+using camInfoSub = message_filters::Subscriber<sensor_msgs::CameraInfo> ;
+using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> ;
+// using syncPolicy =  message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> ;
+
+imageMessageSub subImageColor, subImageDepth;
+camInfoSub subInfoCam, subInfoDepth;
+message_filters::Synchronizer<syncPolicy> sync;*/
+
+
 #define OUT(__x__) std::cout << __x__ << std::endl;
 /*pointers*/
 std::shared_ptr<CloudViewer> viewer_ptr;
@@ -48,6 +68,14 @@ pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
 void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::shared_ptr<PairOfImages>& images)
 {
+  ros::NodeHandle nh;
+  ros::Publisher pclPub;
+  sensor_msgs::PointCloud2 pcl2_cloud;   //msg to be displayed in rviz
+  image_transport::ImageTransport it(nh);
+  PointT rviz_points;           //since rviz are scaled in meters, we need a conversion
+  pcl::PointCloud<PointT>::Ptr rviz_cloud_ptr(new pcl::PointCloud<PointT>);
+  image_transport::Publisher imagePub = it.advertise("camera/ensenso/mono", 1);
+
   if (!viewer_ptr->wasStopped ())  viewer_ptr->showCloud (cloud);
   unsigned char *l_image_array = reinterpret_cast<unsigned char *> (&images->first.data[0]);
   unsigned char *r_image_array = reinterpret_cast<unsigned char *> (&images->second.data[0]);
@@ -66,10 +94,27 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   im.adjustROI (0, 0, images->first.width, 0);
   cv::imshow ("Ensenso images", im);
   cv::waitKey (2);
+
+  //prepare image and pcl to be published for rospy
+  sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), images->first.encoding, im).toImageMsg();
+  //prepare cloud for rospy 
+  pcl::toROSMsg(*cloud, pcl2_cloud);
+  pcl2_cloud.header.stamp = ros::Time::now();
+  pcl2_cloud.header.frame_id = "rospy_cloud";
+
+  // ros::Rate rate(5);
+  if(ros::ok()){
+    imagePub.publish(msg);
+    pclPub.publish(pcl2_cloud);
+    ros::spinOnce();
+    // rate.sleep();
+  }
 }
 
-int main (void)
+int main (int argc, char** argv)
 {
+  ros::init(argc, argv, "ensensor_publisher_node", ros::init_options::AnonymousName);
+
   viewer_ptr.reset (new CloudViewer ("Ensenso viewer"));
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort ();
@@ -95,6 +140,8 @@ int main (void)
   ensenso_ptr->stop ();
   ensenso_ptr->closeDevice ();
   ensenso_ptr->closeTcpPort ();
+
+  ros::shutdown();
 
   return EXIT_SUCCESS;
 }
