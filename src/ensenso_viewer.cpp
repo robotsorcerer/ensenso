@@ -41,6 +41,7 @@ using PointCloudT = pcl::PointCloud<PointT>;
 using  CloudViewer = pcl::visualization::CloudViewer;
 using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback 
 
+#define OUT(__x__) std::cout << __x__ << std::endl;
 /*pointers*/
 std::shared_ptr<CloudViewer> viewer_ptr;
 pcl::EnsensoGrabber::Ptr ensenso_ptr;
@@ -52,6 +53,7 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   unsigned char *r_image_array = reinterpret_cast<unsigned char *> (&images->second.data[0]);
 
   std::cout << "Encoding: " << images->first.encoding << std::endl;
+  
   int type = getOpenCVType (images->first.encoding);
   cv::Mat l_image (images->first.height, images->first.width, type, l_image_array);
   cv::Mat r_image (images->first.height, images->first.width, type, r_image_array);
@@ -79,7 +81,8 @@ int main (void)
   boost::function<void(const boost::shared_ptr<PointCloudT>&, const boost::shared_ptr<PairOfImages>&)> f = boost::bind(&grabberCallback, _1, _2);
   ensenso_ptr->registerCallback (f);
 
-  cv::namedWindow("Ensenso Images", cv::WINDOW_NORMAL);
+  cv::namedWindow("Ensenso images", cv::WINDOW_NORMAL);
+  cv::resizeWindow("Ensenso images", 640, 480) ;
   ensenso_ptr->start ();
 
   while (!viewer_ptr->wasStopped ())
