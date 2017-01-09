@@ -32,6 +32,10 @@ find_package(catkin REQUIRED COMPONENTS
   PCL
   roslib
   rostime  
+  message_filters
+  cv_bridge
+  image_transport
+  pcl_ros
 )
 
 find_package(Ensenso)
@@ -40,7 +44,7 @@ find_package(OpenCV REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-   CATKIN_DEPENDS roscpp rospy sensor_msgs
+   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge pcl_ros
 )
 
 ###########
