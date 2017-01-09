@@ -69,7 +69,7 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   image_transport::Publisher imagePub = it.advertise("/camera/image", 1);
   ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/camera/rospy_cloud", 1);
 
-  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud, 200, 235, 245);
+  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud, 230, 235, 245);
   /*populate the cloud viewer and prepare for publishing*/
   viewer->addPointCloud(cloud, color_handler, cloudName);
   viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE,\
@@ -109,13 +109,13 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
     imagePub.publish(msg);
     pclPub.publish(pcl2_cloud);
     ros::spinOnce();
-    // rate.sleep();
+    rate.sleep();
   }
 }
 
 int main (int argc, char** argv)
 {
-  ros::init(argc, argv, "ensensor_publisher_node", ros::init_options::AnonymousName);  
+  ros::init(argc, argv, "ensensor_publisher_node");  
 
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
   bool running = true;

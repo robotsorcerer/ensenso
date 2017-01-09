@@ -110,7 +110,7 @@ public:
 	 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("PCL Viewer"));
 		
 	 	viewer->initCameraParameters();
-	 	viewer->setBackgroundColor (0.2, 0.3, 0.3);
+	 	viewer->setBackgroundColor (128/255, 128/255, 128/255);
 	 	viewer->setSize(screen_height, screen_width);
 	 	viewer->setShowFPS(true);
 	 	viewer->setCameraPosition(pos_x, pos_y, pos_z, view_x, view_y, view_z) ;	
