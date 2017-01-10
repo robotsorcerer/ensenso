@@ -25,9 +25,9 @@
 *  Author: Olalekan P. Ogunmolu
 */
 #include <iostream>
-#include <vector>
 #include <memory>
 #include <chrono>
+#include <sstream>
 #include <thread>
 #include <algorithm>
 
@@ -38,6 +38,8 @@
 #include <sensor_msgs/image_encodings.h>
 
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <image_transport/image_transport.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -60,6 +62,33 @@ bool updateCloud = false;
 sensor_msgs::PointCloud2 pcl2_cloud;   //msg to be displayed in rviz
 std::unique_ptr<visualizer> viz(new visualizer);
 boost::shared_ptr<pcl_viz> viewer = viz->createViewer();
+
+unsigned counter;
+std::ostringstream oss;
+std::vector<int> compression_params;
+compression_params.push_back(IMWRITE_PNG_COMPRESSION);
+compression_params.push_back(9);
+
+void saveCloudAndImage(const boost::shared_ptr<PointCloudT>& cloud, const cv::Mat& image)
+{
+  oss.str("");
+  oss << "./" << std::setfill('0') << std::setw(4) << counter;
+  const std::string baseName = oss.str();
+  const std::string cloudName = baseName + "_cloud.pcd";
+  const std::string imageName = baseName + "_gray.png";
+
+  auto writer = viewer->getPCDWriter();
+
+  ROS_INFO_STREAM("saving cloud: " << cloudName);
+  writer.writeBinary(cloudName, *cloud);
+  ROS_INFO_STREAM("saving image: " << imageName);
+  cv::imwrite(imageName, image, compression_params);
+
+  ROS_INFO_STREAM("saving complete!");
+  ++counter;
+}
+
+
 
 void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::shared_ptr<PairOfImages>& images)
 {
@@ -101,7 +130,9 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
 
   /*Display cloud and image*/
   cv::imshow ("Ensenso images", im);
-  cv::waitKey (1);
+  auto key = cv::waitKey (1);
+  if(key == 's') 
+    saveCloudAndImage(cloud, im);
 
   /*Publish the damn image and cloud*/
   ros::Rate rate(5);
@@ -119,6 +150,7 @@ int main (int argc, char** argv)
 
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
   bool running = true;
+  bool save = false;
 
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort ();
