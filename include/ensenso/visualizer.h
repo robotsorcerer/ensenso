@@ -86,6 +86,11 @@ public:
 	// 	surfacepoints.close();
 	// }
 
+	pcl::PCDWriter getPCDWriter() const
+	{
+		return writer;
+	}
+
 	void saveCloud(const pcl::PointCloud<PointT>::Ptr cloud)
 	{
 	  std::ostringstream oss;
