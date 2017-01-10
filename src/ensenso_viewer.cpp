@@ -75,7 +75,7 @@ void saveCloudAndImage(const boost::shared_ptr<PointCloudT>& cloud, const cv::Ma
   oss << "./" << std::setfill('0') << std::setw(4) << counter;
   const std::string baseName = oss.str();
   const std::string cloudName = baseName + "_cloud.pcd";
-  const std::string imageName = baseName + "gray.png";
+  const std::string imageName = baseName + "_gray.png";
 
   auto writer = viewer->getPCDWriter();
 
