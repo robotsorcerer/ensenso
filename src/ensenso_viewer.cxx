@@ -61,13 +61,21 @@ pcl::EnsensoGrabber::Ptr ensenso_ptr;
 bool running;
 bool save = false;
 bool updateCloud = false;
-unsigned counter = 0;
+size_t counter = 0;
 std::ostringstream oss;
 const std::string cloudName = "ensenso cloud";
 sensor_msgs::PointCloud2 pcl2_cloud;   //msg to be displayed in rviz
-std::unique_ptr<visualizer> viz(new visualizer);
+boost::shared_ptr<visualizer> viz(new visualizer);
+auto paths = pathfinder::getCurrentPath();
+auto pwd = std::get<0>(paths);
+auto train_imgs = std::get<3>(paths);
+auto train_clouds = std::get<4>(paths);
+auto test_imgs = std::get<5>(paths);
+auto test_clouds = std::get<6>(paths);
+ROS_INFO_STREAM("train_imgs: "<< train_imgs << "\ttrain_clouds: " << train_clouds );
 boost::shared_ptr<pcl_viz> viewer = viz->createViewer();
 std::vector<int> compression_params{cv::IMWRITE_PNG_COMPRESSION, 5};
+auto writer = viz->getPCDWriter();
 
 void quit()
 {
@@ -79,24 +87,14 @@ void quit()
 
 void saveCloudAndImage(const boost::shared_ptr<PointCloudT>& cloud, const cv::Mat& image)
 {
-  auto paths = pathfinder::getCurrentPath();
-  auto pwd = std::get<0>(paths);
-  auto train_imgs = std::get<3>(paths);
-  auto train_clouds = std::get<4>(paths);
-  auto test_imgs = std::get<5>(paths);
-  auto test_clouds = std::get<6>(paths);
-  ROS_INFO_STREAM("train_imgs: "<< train_imgs << "\ttrain_clouds: " << train_clouds );
-
-  oss.str("face_");
+  oss.str("");
   oss << "./" << std::setfill('0') << std::setw(4) << counter;
   const std::string baseName = oss.str();
-  const std::string cloudName = baseName + "_cloud.pcd";
-  const std::string imageName = baseName + "_image.png";
-
-  auto writer = viz->getPCDWriter();
+  const std::string cloud_id = "train_" + baseName + "_cloud.pcd";
+  const std::string imageName = "train_" + baseName + "_image.png";
 
   ROS_INFO_STREAM("saving cloud: " << cloudName);
-  writer.writeBinary(cloudName, *cloud);
+  writer.writeBinary(cloud_id, *cloud);
   ROS_INFO_STREAM("saving image: " << imageName);
   cv::imwrite(imageName, image, compression_params);
 
@@ -161,7 +159,7 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   if(ros::ok()){
     imagePub.publish(msg);
     pclPub.publish(pcl2_cloud);
-    ros::spinOnce();
+    // ros::spinOnce();
     rate.sleep();
   }
 }
@@ -170,6 +168,8 @@ int main (int argc, char** argv)
 {
   ros::init(argc, argv, "ensensor_publisher_node");  
 
+  ros::AsyncSpinner spinner(4);
+  spinner.start();
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
   running = updateCloud = true;
 
@@ -187,10 +187,10 @@ int main (int argc, char** argv)
   cv::resizeWindow("Ensenso images", 640, 480) ;
   ensenso_ptr->start ();
 
-  while(!viewer->wasStopped() /*&& ros::ok()*/)
+  std::chrono::milliseconds duration(10);
+  while(!viewer->wasStopped())
   {
-    viewer->spinOnce();
-    std::chrono::milliseconds duration(50);
+    viewer->spinOnce(10);
     std::this_thread::sleep_for(duration);
   }
 
@@ -201,6 +201,7 @@ int main (int argc, char** argv)
   if(!running)
   {   
     quit();
+    spinner.stop();
   }
 
   return EXIT_SUCCESS;
