@@ -57,4 +57,13 @@ int getOpenCVType (std::string type)
 
   return (-1);
 }
+
+//Forward Declarations
+namespace pathfinder
+{
+std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
+        const std::string&, const std::string&, const std::string&, \
+        const std::string&> getCurrentPath();
+}
+
 #endif

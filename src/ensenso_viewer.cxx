@@ -27,7 +27,6 @@
 #include <iostream>
 #include <memory>
 #include <chrono>
-#include <sstream>
 #include <thread>
 #include <algorithm>
 
@@ -51,6 +50,7 @@
 /*typedefs*/
 using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback 
 using pcl_viz = pcl::visualization::PCLVisualizer;
+using namespace pathfinder;
 
 #define OUT(__x__) std::cout << __x__ << std::endl;
 
@@ -58,26 +58,42 @@ using pcl_viz = pcl::visualization::PCLVisualizer;
 pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
 /*Globals*/
+bool running;
+bool save = false;
 bool updateCloud = false;
+unsigned counter = 0;
+std::ostringstream oss;
+const std::string cloudName = "ensenso cloud";
 sensor_msgs::PointCloud2 pcl2_cloud;   //msg to be displayed in rviz
 std::unique_ptr<visualizer> viz(new visualizer);
 boost::shared_ptr<pcl_viz> viewer = viz->createViewer();
+std::vector<int> compression_params{cv::IMWRITE_PNG_COMPRESSION, 5};
 
-unsigned counter;
-std::ostringstream oss;
-std::vector<int> compression_params;
-compression_params.push_back(IMWRITE_PNG_COMPRESSION);
-compression_params.push_back(9);
+void quit()
+{
+  ROS_INFO("called quit");
+  cv::destroyAllWindows();
+
+  ros::shutdown();
+}
 
 void saveCloudAndImage(const boost::shared_ptr<PointCloudT>& cloud, const cv::Mat& image)
 {
-  oss.str("");
+  auto paths = pathfinder::getCurrentPath();
+  auto pwd = std::get<0>(paths);
+  auto train_imgs = std::get<3>(paths);
+  auto train_clouds = std::get<4>(paths);
+  auto test_imgs = std::get<5>(paths);
+  auto test_clouds = std::get<6>(paths);
+  ROS_INFO_STREAM("train_imgs: "<< train_imgs << "\ttrain_clouds: " << train_clouds );
+
+  oss.str("face_");
   oss << "./" << std::setfill('0') << std::setw(4) << counter;
   const std::string baseName = oss.str();
   const std::string cloudName = baseName + "_cloud.pcd";
-  const std::string imageName = baseName + "_gray.png";
+  const std::string imageName = baseName + "_image.png";
 
-  auto writer = viewer->getPCDWriter();
+  auto writer = viz->getPCDWriter();
 
   ROS_INFO_STREAM("saving cloud: " << cloudName);
   writer.writeBinary(cloudName, *cloud);
@@ -88,18 +104,18 @@ void saveCloudAndImage(const boost::shared_ptr<PointCloudT>& cloud, const cv::Ma
   ++counter;
 }
 
-
-
 void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::shared_ptr<PairOfImages>& images)
 {
   ros::NodeHandle nh;
-  std::string cloudName = "ensenso cloud";
   image_transport::ImageTransport it(nh);
   image_transport::Publisher imagePub = it.advertise("/camera/image", 1);
   ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/camera/rospy_cloud", 1);
 
-  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud, 230, 235, 245);
+  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud, 255, 255, 255);
   /*populate the cloud viewer and prepare for publishing*/
+  if(updateCloud){    
+    viewer->removePointCloud(cloudName);
+  }
   viewer->addPointCloud(cloud, color_handler, cloudName);
   viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE,\
                      3, cloudName);
@@ -129,10 +145,16 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), images->first.encoding, im).toImageMsg();
 
   /*Display cloud and image*/
-  cv::imshow ("Ensenso images", im);
-  auto key = cv::waitKey (1);
-  if(key == 's') 
-    saveCloudAndImage(cloud, im);
+  cv::imshow("Ensenso images", im);
+  int key = cv::waitKey(1);
+  switch(key & 0xFF)
+  {
+    case 27:
+    case 'q':
+      quit();
+    case 's':
+      saveCloudAndImage(cloud, im);
+  }
 
   /*Publish the damn image and cloud*/
   ros::Rate rate(5);
@@ -149,8 +171,7 @@ int main (int argc, char** argv)
   ros::init(argc, argv, "ensensor_publisher_node");  
 
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
-  bool running = true;
-  bool save = false;
+  running = updateCloud = true;
 
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort ();
@@ -166,7 +187,7 @@ int main (int argc, char** argv)
   cv::resizeWindow("Ensenso images", 640, 480) ;
   ensenso_ptr->start ();
 
-  while(!viewer->wasStopped())
+  while(!viewer->wasStopped() /*&& ros::ok()*/)
   {
     viewer->spinOnce();
     std::chrono::milliseconds duration(50);
@@ -177,10 +198,9 @@ int main (int argc, char** argv)
   ensenso_ptr->closeDevice ();
   ensenso_ptr->closeTcpPort ();
 
-  if(!running or !ros::ok())
+  if(!running)
   {   
-    ros::shutdown();
-    viz->quit();
+    quit();
   }
 
   return EXIT_SUCCESS;
