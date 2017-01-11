@@ -103,7 +103,7 @@ public:
 	  viewer->setShowFPS(true);
 	  viewer->initCameraParameters ();
 	  viewer->addCoordinateSystem (1.0);
-	 	viewer->registerKeyboardCallback(&visualizer::keyboardEventOccurred, *this);
+	 	// viewer->registerKeyboardCallback(&visualizer::keyboardEventOccurred, *this);
 	  return (viewer);
 	}
 

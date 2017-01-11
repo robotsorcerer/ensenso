@@ -1,8 +1,47 @@
 #include <tuple>
+#include <boost/foreach.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/property_tree/json_parser.hpp>
+
+#include <ros/package.h>  /*roslib*/
+#ifndef __ENSENSO_HEADERS_H__
+#define __ENSENSO_HEADERS_H__
+#endif
 
 namespace pathfinder
 {
+	static bool getROSPackagePath(const std::string pkgName, boost::filesystem::path & pkgPath)
+	{
+	    pkgPath = ros::package::getPath(pkgName);
+	    if (pkgPath.empty())
+	    {
+	        printf("Could not find package '%s' ", pkgName.c_str());
+	        return false;
+	    }
+	    else
+	    {
+	        printf("%s package found here: %s", pkgName.c_str(), pkgPath.c_str());
+	        return true;
+	    }
+	}
+
+	static bool copyDirectory(const boost::filesystem::path srcPath, const boost::filesystem::path dstPath)
+	{
+	    boost::filesystem::create_directory(dstPath);
+
+	    for (boost::filesystem::directory_iterator end, dir(srcPath.c_str()); dir != end; ++dir)
+	    {
+	        boost::filesystem::path fn = (*dir).path().filename();
+	        boost::filesystem::path srcFile = (*dir).path();
+	        //cout << "     Source file: " << srcFile.c_str() << endl;
+	        boost::filesystem::path dstFile = dstPath / fn;
+	        //cout << "Destination file: " << dstFile.c_str() << endl;
+	        boost::filesystem::copy_file(srcFile, dstFile);
+	    }
+	    return true;
+	}
+
 	std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
 				const std::string&, const std::string&, const std::string&, \
 				const std::string&> getCurrentPath()

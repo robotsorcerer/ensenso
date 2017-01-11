@@ -1,5 +1,5 @@
-#ifndef __ENSENSO_HEADERS_H
-#define __ENSENSO_HEADERS_H
+#ifndef _ENSENSO_HEADERS_H_
+#define _ENSENSO_HEADERS_H_
 
 #include <pcl/common/common.h>
 #include <pcl/console/print.h>
@@ -10,6 +10,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#include <ros/ros.h>
 #include <string>
 
 int getOpenCVType (std::string type)
@@ -61,7 +62,9 @@ int getOpenCVType (std::string type)
 //Forward Declarations
 namespace pathfinder
 {
-std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
+  static bool getROSPackagePath(const std::string pkgName, boost::filesystem::path & pkgPath);
+  static bool copyDirectory(const boost::filesystem::path srcPath, const boost::filesystem::path dstPath);
+  std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
         const std::string&, const std::string&, const std::string&, \
         const std::string&> getCurrentPath();
 }
