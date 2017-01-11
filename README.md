@@ -23,7 +23,7 @@
 The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured. 
 
 <div class="fig figcenter fighighlight">
-  <img src="/images/0001_gray.png" height="350" width="85%" align="middle" style="border-left: 1px solid black;">
+  <img src="/images/0001_gray.png" height="450" width="85%" align="middle" style="border-left: 1px solid black;">
   </br>
   <div class="figcaption" align="middle"></div>
 </div>
