@@ -22,6 +22,12 @@
 #### Introduction
 The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured. 
 
+<div class="fig figcenter fighighlight">
+  <img src="/images/0001_gray.png" height="350" width="85%" align="middle" style="border-left: 1px solid black;">
+  </br>
+  <div class="figcaption" align="middle"></div>
+</div>
+
 #### Dependencies
 	
 For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera. This code is C++-11 compatible. It would not compile without enabling the c++ 11 options on your compiler. A minimum of g++ 4.8 or VS 2012 is required to run this code.
