@@ -20,7 +20,7 @@ require 'image'   -- to visualize the dataset
 require 'nnx'      -- provides a normalization operator
 
 local opt = opt or {
-   visualize = true,
+   visualize = false,
    size = 'small',
    patches='all',
 }
