@@ -9,10 +9,11 @@ require 'sys'
 --some global options
 local opt = {	
 	nThreads = 4,           -- #  of data loading threads to use
-	batchSize = 9,
+	batchSize = 3,
 	loadSize = 96,
 	fineSize = 256,
 	save     = 'results/',  -- path to save logs of results
+	name = 'manikin',
 	niter = 25,             -- #  of iter at starting learning rate
 	lr = 0.0002,            -- initial learning rate for adam
 	lrdec = 1e-7,         -- learing Rate decay
@@ -87,48 +88,111 @@ local trLabels = Data.trainData.labels:clone()
 local function getBatch(i)
    local batch = {}
    batch.trDataBatch = trData[{ {i, i+opt.batchSize-1}, {}, {}, {} }]
-   batch.trDataLabelsBatch = trDataLabels[{ {i, i+opt.batchSize-1}, {}, {}, {} }]
-   -- batch.teDataBatch = teData[{ {i, i+opt.batchSize-1}, {}, {}, {} }]
+   batch.trLabelsBatch = trLabels[{ {i, i+opt.batchSize-1} }]
    return batch
 end
 
+function ship2gpu(x)
+	if opt.gpu > 0 then
+		x:cuda()
+	else
+		x:double()
+	end
+end
+
+ship2gpu(trData)
+ship2gpu(teData)
+
 if opt.display then disp = require 'display' end
 
+--convenience path where model checkpoints are saved
+if not paths.dirp('checkpoints/') then os.execute('mkdir checkpoints/') end
 -- print('trData size: ', trData:size())
 -- sys.sleep('30')
 
--- create closure to evaluate f(X) and df/dX of discriminator
-local fDx = function(x)
-   gradParameters:zero()
+--train
+for epoch = 1, opt.niter do
+   epoch_tm:reset()
+   local counter = 0
+   -- local cv_loss   
+   local output
 
-   -- train with real
-   data_tm:reset(); data_tm:resume()
-   local real = data:getBatch()
-   data_tm:stop()
-   input:copy(real)
-   label:fill(real_label)
+   for i = 1, math.min(trData:size(1), opt.ntrain), opt.batchSize do
 
-   local output = netD:forward(input)
-   local errD_real = criterion:forward(output, label)
-   local df_do = criterion:backward(output, label)
-   netD:backward(input, df_do)
+   	  collectgarbage()
 
-   -- train with fake
-   if opt.noise == 'uniform' then -- regenerate random noise
-       noise:uniform(-1, 1)
-   elseif opt.noise == 'normal' then
-       noise:normal(0, 1)
+   	  -- batch fits?
+   	  if (i + opt.batchSize - 1) > trData:size(1) then
+   	     break
+   	  end
+
+      tm:reset()
+      local temp, labels;
+
+      -- cv_loss =  cross_val(i)
+
+      --closure for f(x) and df/dx
+      local fx = function(x)
+         net:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
+
+         gradParams:zero()
+
+         data_tm:reset(); data_tm:resume()
+
+         temp = (getBatch(i)).trDataBatch
+         labels = (getBatch(i)).trLabelsBatch
+
+         data_tm:stop()
+
+         input:copy(temp)
+         label:copy(labels)
+
+
+         print('output size: ', net:forward(input))
+
+         output = net:forward(input)
+         print('output size: ', output:size())
+         err = criterion:forward(output, label)
+         -- estimate df/do
+         local df_do = criterion:backward(output, label)
+         net:backward(input, df_do)
+         net:updateGradInput({input}, {df_do})
+
+         -- update confusion
+         for i = 1,opt.batchSize do
+            confusion:add(output[i],label[i])
+         end
+
+         return err, gradParams
+      end
+
+      -- update network: max log
+      optim.adam(fx, params, optimState)
+
+      --display
+      counter = counter + 1
+      if counter % 10 == 0 and opt.display then         
+         local pred = net:forward(input)
+         disp.image(label, {win=opt.display_id, title='face labels'})
+         disp.image(output, {win=opt.display_id*10, title='face preds'})
+      end
+
+      -- print confusion matrix
+      print(confusion)
+
+      loss_history[i] = err
+      -- log erroes
+      if((i-1)/opt.batchSize) %1 == 0 then
+         print(('Epoch: [%d][%3d / %3d] | Time: %.3f | DataTime: %.3f '
+            .. ' | Err: %.8f'):format(
+            epoch, ((i-1) / input:size(1)), 
+            math.floor(math.min(input:size(1), opt.niter))/opt.batchSize,
+            tm:time().real, data_tm:time().real, err and err or -1))
+      end
    end
-   local fake = netG:forward(noise)
-   input:copy(fake)
-   label:fill(fake_label)
-
-   local output = netD:forward(input)
-   local errD_fake = criterion:forward(output, label)
-   local df_do = criterion:backward(output, label)
-   netD:backward(input, df_do)
-
-   errD = errD_real + errD_fake
-
-   return errD, gradParametersD
+   params, gradParams = nil, nil
+     util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_net.t7', net, opt.gpu)
+   -- end
+   params, gradParams = net:getParameters() --reflatted trhe params
+   print(('Epoch end %d/ %d \t Time Taken: %.3f'):format(epoch, opt.niter, epoch_tm:time().real))
 end

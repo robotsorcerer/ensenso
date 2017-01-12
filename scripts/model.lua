@@ -101,7 +101,6 @@ if opt.model == 'all-conv' then
     -- net = util.cudnn(net);    
     net:cuda(); 
   end
-  print('network: ', net)
 else
    print('==> unknown model: ' .. opt.model)
    os.exit()
