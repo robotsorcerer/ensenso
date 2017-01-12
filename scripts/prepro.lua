@@ -149,38 +149,9 @@ end
 
 ----------------------------------------------------------------------
 print(sys.COLORS.red ..  '==> preprocessing data')
--- faces and bg are already YUV here, no need to convert!
-
--- Preprocessing requires a floating point representation (the original
--- data is stored on bytes). Types can be easily converted in Torch, 
--- in general by doing: dst = src:type('torch.TypeTensor'), 
--- where Type=='Float','Double','Byte','Int',... Shortcuts are provided
--- for simplicity (float(),double(),cuda(),...):
 
 trainData.data = trainData.data:float()
 testData.data = testData.data:float()
-
--- We now preprocess the data. Preprocessing is crucial
--- when applying pretty much any kind of machine learning algorithm.
-
--- For natural images, we use several intuitive tricks:
---   + images are mapped into YUV space, to separate luminance information
---     from color information
---   + the luminance channel (Y) is locally normalized, using a contrastive
---     normalization operator: for each neighborhood, defined by a Gaussian
---     kernel, the mean is suppressed, and the standard deviation is normalized
---     to one.
---   + color channels are normalized globally, across the entire dataset;
---     as a result, each color component has 0-mean and 1-norm across the dataset.
-
--- Convert all images to YUV
--- print '==> preprocessing data: colorspace RGB -> YUV'
--- for i = 1,trainData:size() do
---    trainData.data[i] = image.rgb2yuv(trainData.data[i])
--- end
--- for i = 1,testData:size() do
---    testData.data[i] = image.rgb2yuv(testData.data[i])
--- end
 
 -- Name channels for convenience
 local channels = {'y'}--,'u','v'}

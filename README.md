@@ -16,6 +16,7 @@
 	
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
+- [Trainign Data for Mannequine Head](#training-data-for-manikin)
 - [FAQs](#faqs)
 - [Citation](#citation)
 
@@ -87,6 +88,16 @@ If you encounter problems during set-up, it might be worth the while runing the 
 2. Clone this repo to your catkin src folder then `catkin build` from your catkin workspace root.
 
 3. All things being equal, you should be presented with a pcl window that stream the frames that are grabbed to your pcl cloud viewer
+
+#### Trainingh Data for Mannequine Head
+
+The training data I used in the paper is available on my [academic webpage](http://ecs.utdallas.edu/~opo140030/sensors/data.tar.gz). Download the zipped tar-ball and extract it to a folder within `ensenso_root` named data. To train your model, you would want to do:
+
+```bash
+  IMAGES_ROOT=data th scripts/prepro.lua
+```
+
+This would run through all the training images, separate them into background, face and fake faces tensors, and it would do spatial contrastive normalization of the grayscale images in the YUV space
 
 #### FAQs
 ##### I am having issues connecting to the sensor even though my code compiles
