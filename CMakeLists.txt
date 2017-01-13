@@ -40,6 +40,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Ensenso)
+find_package(Boost COMPONENTS filesystem REQUIRED)
 find_package(MySQL REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -54,6 +55,7 @@ catkin_package(
 
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 include_directories(
+  ${Boost_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
   ${ensenso_INCLUDE_DIRS}
   ${MYSQL_INCLUDE_DIRECTORIES}
@@ -80,7 +82,7 @@ if(ENSENSO_FOUND)
 
   ## Specify libraries to link a library or executable target against
   target_link_libraries(ensenso_viewer
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
 
 else(ENSENSO_FOUND)

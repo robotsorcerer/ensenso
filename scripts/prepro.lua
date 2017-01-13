@@ -21,7 +21,7 @@ require 'nnx'      -- provides a normalization operator
 
 local opt = opt or {
    visualize = false,
-   size = 'small',
+   size = 64,
    patches='all',
 }
 ----------------------------------------------------------------------
@@ -48,7 +48,7 @@ for file in paths.files(data, function(nm) return nm:find('face*') end) do
   local x1, y1 = 190, 850
   local x2, y2 = 1140, 72
   -- local cropped = image.crop(im, x1, y1, x2, y2)
-  local scaled = image.scale(im, 256, 256)
+  local scaled = image.scale(im, opt.size, opt.size)
   image.save(f2, scaled)
 end
 
@@ -64,7 +64,7 @@ for file in paths.files(data, function(nm) return nm:find('face_bg*') end) do
   table.insert(bg_files, file)
 end
 
-print(#allfiles, '\t', #face_files, '\t', #fake_files, '\t', #bg_files)
+-- print(#allfiles, '\t', #face_files, '\t', #fake_files, '\t', #bg_files)
 
 --get total number of files in the training images directory excluding symbolic files 
 -- local trainTotal = tonumber(os.execute('ls ../data/train/images/ -1 | grep -v ^l | wc -l'))
@@ -73,10 +73,10 @@ print(#allfiles, '\t', #face_files, '\t', #fake_files, '\t', #bg_files)
 -- local fakeFacesNum = os.execute('ls ../data/train/images/face_fake* -1 | grep -v ^l | wc -l')
 
 -- preallocate images and their labels
-local imagesAll, labelsAll    = torch.Tensor(#allfiles,1,256,256), torch.Tensor(#allfiles)
-local posFaces, labelsPos     = torch.Tensor(#face_files,1,256,256), torch.Tensor(#face_files)
-local bgFaces, labelsBg       = torch.Tensor(#bg_files,1,256,256), torch.Tensor(#bg_files)
-local fakeFaces, labelsFake   = torch.Tensor(#fake_files,1,256,256), torch.Tensor(#fake_files)
+local imagesAll, labelsAll    = torch.Tensor(#allfiles,1,opt.size,opt.size), torch.Tensor(#allfiles)
+local posFaces, labelsPos     = torch.Tensor(#face_files,1,opt.size,opt.size), torch.Tensor(#face_files)
+local bgFaces, labelsBg       = torch.Tensor(#bg_files,1,opt.size,opt.size), torch.Tensor(#bg_files)
+local fakeFaces, labelsFake   = torch.Tensor(#fake_files,1,opt.size,opt.size), torch.Tensor(#fake_files)
 
 -- classes: GLOBAL var!
 classes = {'face','background', 'fake'}
@@ -122,13 +122,13 @@ local tesize = labelsShuffle:size(1) - trsize
 
 -- create train set:
 trainData = {
-   data = torch.Tensor(trsize, 1, 256, 256),
+   data = torch.Tensor(trsize, 1, opt.size, opt.size),
    labels = torch.Tensor(trsize),
    size = function() return trsize end
 }
 --create test set:
 testData = {
-      data = torch.Tensor(tesize, 1, 256, 256),
+      data = torch.Tensor(tesize, 1, opt.size, opt.size),
       labels = torch.Tensor(tesize),
       size = function() return tesize end
    }
@@ -143,8 +143,8 @@ for i=trsize+1,tesize+trsize do
 end
 
 -- remove from memory temp image files:
--- imagesAll = nil
--- labelsAll = nil
+imagesAll = nil
+labelsAll = nil
 
 
 ----------------------------------------------------------------------
@@ -157,9 +157,7 @@ testData.data = testData.data:float()
 local channels = {'y'}--,'u','v'}
 
 -- Normalize each channel, and store mean/std
--- per channel. These values are important, as they are part of
--- the trainable parameters. At test time, test data will be normalized
--- using these values.
+-- per channel. 
 print(sys.COLORS.red ..  '==> preprocessing data: normalize each feature (channel) globally')
 local mean = {}
 local std = {}

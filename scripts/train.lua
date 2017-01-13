@@ -9,9 +9,9 @@ require 'sys'
 --some global options
 local opt = {	
 	nThreads = 4,           -- #  of data loading threads to use
-	batchSize = 3,
+	batchSize = 1,
 	loadSize = 96,
-	fineSize = 256,
+	fineSize = 64,
 	save     = 'results/',  -- path to save logs of results
 	name = 'manikin',
 	niter = 25,             -- #  of iter at starting learning rate
@@ -33,6 +33,7 @@ if opt.display == 0 then opt.display = false end
 -- Model + Loss + Data:
 local model = require 'scripts.model'
 local Data  = require 'scripts.prepro'
+opt.model = model.opt.model
 
 local net = model.net
 local criterion = model.loss
@@ -59,7 +60,6 @@ optimState = {
 
 ----------------------------------------------------------------------
 print(sys.COLORS.red ..  '==> allocating minibatch memory')
-
 local input = torch.Tensor(opt.batchSize, 1, opt.fineSize, opt.fineSize)
 local label = torch.Tensor(opt.batchSize)
 local err
@@ -101,14 +101,12 @@ function ship2gpu(x)
 end
 
 ship2gpu(trData)
-ship2gpu(teData)
+ship2gpu(trLabels)
 
 if opt.display then disp = require 'display' end
 
 --convenience path where model checkpoints are saved
 if not paths.dirp('checkpoints/') then os.execute('mkdir checkpoints/') end
--- print('trData size: ', trData:size())
--- sys.sleep('30')
 
 --train
 for epoch = 1, opt.niter do
@@ -147,14 +145,15 @@ for epoch = 1, opt.niter do
          input:copy(temp)
          label:copy(labels)
 
-
-         print('output size: ', net:forward(input))
-
          output = net:forward(input)
          print('output size: ', output:size())
+         print('label size: ', label:size())
          err = criterion:forward(output, label)
+         print('err: ', err)
          -- estimate df/do
          local df_do = criterion:backward(output, label)
+         print('df_do: ', df_do:size())
+         print('input size: ', input:size())
          net:backward(input, df_do)
          net:updateGradInput({input}, {df_do})
 
@@ -167,7 +166,7 @@ for epoch = 1, opt.niter do
       end
 
       -- update network: max log
-      optim.adam(fx, params, optimState)
+      optim.sgd(fx, params, optimState)
 
       --display
       counter = counter + 1
@@ -191,7 +190,7 @@ for epoch = 1, opt.niter do
       end
    end
    params, gradParams = nil, nil
-     util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_net.t7', net, opt.gpu)
+     util.save('checkpoints/' .. opt.model .. '_' .. epoch .. '_net.t7', net, opt.gpu)
    -- end
    params, gradParams = net:getParameters() --reflatted trhe params
    print(('Epoch end %d/ %d \t Time Taken: %.3f'):format(epoch, opt.niter, epoch_tm:time().real))
