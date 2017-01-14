@@ -30,42 +30,6 @@ using namespace pathfinder;
 
 class Receiver
 {
-public:
-  //constructor
-  Receiver()
-  : updateCloud(false), updateImage(false), save(false), counter(0), 
-  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
-  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameIr, 1),  
-  sync(syncPolicy(10), subImageIr, subCloud)
-  {
-    sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
-
-    params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-    params.push_back(3);
-
-    viewer=viz->createViewer();
-
-    // imageDispThread = std::thread(&Receiver::imageDisp, this); 
-  }
-  //destructor
-  ~Receiver()
-  {
-    // if(imageDispThread.joinable())
-    // {
-    //   imageDispThread.join();
-    // }
-  }
-
-  Receiver(Receiver const&) =delete;
-  Receiver& operator=(Receiver const&) = delete;
-
-
-  void run()
-  {
-    begin();
-    end();
-  }
 private:  
   /*typedefs*/
   using PointT = pcl::PointXYZ;
@@ -73,9 +37,7 @@ private:
   using pcl_viz = pcl::visualization::PCLVisualizer;
   using imageMsgSub = message_filters::Subscriber<sensor_msgs::Image>;
   using cloudMsgSub = message_filters::Subscriber<sensor_msgs::PointCloud2>;
-  using syncPolicy = message_filters::sync_policies::ApproximateTime<\
-                                                      sensor_msgs::Image,
-                                                       sensor_msgs::PointCloud2>;
+  using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,sensor_msgs::Image>;
 
   bool running, updateCloud, updateImage, save;
   size_t counter;
@@ -104,6 +66,42 @@ private:
   boost::shared_ptr<visualizer> viz;
   boost::shared_ptr<pcl_viz> viewer;
   message_filters::Synchronizer<syncPolicy> sync;
+public:
+  //constructor
+  Receiver()
+  : updateCloud(false), updateImage(false), save(false), counter(0), 
+  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
+  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
+  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameIr, 1),  
+  sync(syncPolicy(10), subCloud, subImageIr)
+  {
+    sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
+
+    params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+    params.push_back(3);
+
+    viewer=viz->createViewer();
+
+    // imageDispThread = std::thread(&Receiver::imageDisp, this); 
+  }
+  //destructor
+  ~Receiver()
+  {
+    // if(imageDispThread.joinable())
+    // {
+    //   imageDispThread.join();
+    // }
+  }
+
+  Receiver(Receiver const&) =delete;
+  Receiver& operator=(Receiver const&) = delete;
+
+
+  void run()
+  {
+    begin();
+    end();
+  }
 private:
   void begin()
   {      
@@ -132,9 +130,9 @@ private:
     running = false;
   }
 
-  void callback(const sensor_msgs::ImageConstPtr& ensensoImage, const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
+  void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage)
   {
-    cv::Mat ir; 
+/*    cv::Mat ir; 
     PointCloudT cloud;
     getImage(ensensoImage, ir);
     getCloud(ensensoCloud, cloud);
@@ -144,7 +142,7 @@ private:
     this->ir = ir;
     this->cloud = cloud;
     updateImage = true;
-    updateCloud = true;
+    updateCloud = true;*/
   }
 
   void getImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) const
