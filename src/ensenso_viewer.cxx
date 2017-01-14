@@ -34,8 +34,8 @@ public:
   //constructor
   Receiver()
   : updateCloud(false), updateImage(false), save(false), counter(0), 
-  cloudName("ensenso_cloud"), basetopic("/ensenso"), spinner(4),
-  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
+  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
+  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameIr, 1),  
   sync(syncPolicy(10), subImageIr, subCloud)
   {
@@ -57,8 +57,8 @@ public:
     // }
   }
 
-  // Receiver(Receiver const&) =delete;
-  // Receiver& operator=(Receiver const&) = delete;
+  Receiver(Receiver const&) =delete;
+  Receiver& operator=(Receiver const&) = delete;
 
 
   void run()
@@ -200,9 +200,9 @@ private:
         cloud = this->cloud;
         updateImage = false;
 
-        cv::namedWindow("Ensenso images", cv::WINDOW_NORMAL);
-        cv::resizeWindow("Ensenso images", 640, 480) ;
-        cv::imshow("Ensenso images", ir);
+        cv::namedWindow(windowName, cv::WINDOW_NORMAL);
+        cv::resizeWindow(windowName, 640, 480) ;
+        cv::imshow(windowName, ir);
       }
 
       int key = cv::waitKey(1);
@@ -226,13 +226,12 @@ private:
   void cloudDisp()
   {
     const PointCloudT& cloud  = this->cloud;    
-    // pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud, 255, 255, 255);
     PointCloudT::ConstPtr cloud_ptr (&cloud);
+    pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
     cv::Mat ir = this->ir;
     for(; running && ros::ok() ;)
     {
-
-      viewer->addPointCloud(cloud_ptr, /*color_handler, */cloudName);
+      viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
       /*populate the cloud viewer and prepare for publishing*/
       if(updateCloud)
       {   
@@ -254,6 +253,8 @@ private:
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "ensensor_viewer_node"); 
+
+  ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
   Receiver r;
   r.run();
