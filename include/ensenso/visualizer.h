@@ -25,8 +25,6 @@
 pcl::RangeImage::CoordinateFrame coordinate_frame = pcl::RangeImage::CAMERA_FRAME;
 
 /*Custom typedefs*/
-using PointT = pcl::PointXYZ;
-using PointCloudT = pcl::PointCloud<PointT>;
 using CloudViewer = pcl::visualization::CloudViewer;
 
 /*Globals*/

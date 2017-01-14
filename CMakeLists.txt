@@ -73,14 +73,22 @@ if(ENSENSO_FOUND)
   add_definitions(${PCL_DEFINITIONS})
 
   ## Declare executable source files
+  set(bridge_files src/ensenso_bridge.cxx 
+  					       src/factory_functions.cxx)
+
   set(viewer_files src/ensenso_viewer.cxx 
-  					src/factory_functions.cxx
-            src/pathfinder.cxx)
+                    src/factory_functions.cxx
+                    src/pathfinder.cxx)
 
   ## Declare a C++ executable
+  add_executable(ensenso_bridge ${bridge_files})
   add_executable(ensenso_viewer ${viewer_files})
 
   ## Specify libraries to link a library or executable target against
+  target_link_libraries(ensenso_bridge
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+  )
+
   target_link_libraries(ensenso_viewer
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
