@@ -55,6 +55,7 @@ sensor_msgs::PointCloud2 pcl2_msg;   //msg to be displayed in rviz
 ros::Publisher pclPub;
 image_transport::Publisher imagePub, leftImagePub, rightImagePub;
 image_transport::CameraPublisher  leftCamPub, rightCamPub;
+std::string encoding = "mono8";
 
 void initPublishers()
 {
@@ -95,6 +96,12 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
 
   cv::Mat l_image (images->first.height, images->first.width, type1, l_image_array);
   cv::Mat r_image (images->first.height, images->first.width, type2, r_image_array);
+
+  if(images->first.encoding == "CV_8UC3") {
+    type1 = CV_8UC3; 
+    encoding = "bgr8";
+  }
+
   cv::Mat im (images->first.height, images->first.width * 2, type1);
   cv::Mat left_image(images->first.height, images->first.width, type1);
   cv::Mat right_image(images->second.height, images->second.width, type2);  
@@ -109,17 +116,17 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   std_msgs::Header header;
   header.frame_id = "ensenso_image";
   header.stamp = ros::Time::now();
-  msg = cv_bridge::CvImage(header, images->first.encoding, im).toImageMsg();
+  msg = cv_bridge::CvImage(header, encoding, im).toImageMsg();
 
   std_msgs::Header left_header;
   left_header.frame_id = "left_ensenso_image";
   left_header.stamp = ros::Time::now();
-  left_msg = cv_bridge::CvImage(left_header, images->first.encoding, left_image).toImageMsg();
+  left_msg = cv_bridge::CvImage(left_header, encoding, left_image).toImageMsg();
 
   std_msgs::Header right_header;
   right_header.frame_id = "right_ensenso_image";
   right_header.stamp = ros::Time::now();
-  right_msg = cv_bridge::CvImage(right_header, images->second.encoding, right_image).toImageMsg();
+  right_msg = cv_bridge::CvImage(right_header, encoding, right_image).toImageMsg();
 }
 
 void callback (const PointCloudT::Ptr& cloud, \

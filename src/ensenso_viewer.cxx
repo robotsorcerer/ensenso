@@ -81,16 +81,11 @@ public:
 
     boost::shared_ptr<visualizer> viz (new visualizer);
     viewer=viz->createViewer();
-
-    // imageDispThread = std::thread(&Receiver::imageDisp, this); 
   }
   //destructor
   ~Receiver()
   {
-    // if(imageDispThread.joinable())
-    // {
-    //   imageDispThread.join();
-    // }
+
   }
 
   Receiver(Receiver const&) =delete;
@@ -108,17 +103,18 @@ private:
     if(spinner.canStart())  
     {   
       spinner.start();  
+      ROS_INFO("started spinner");
     }
     running = true;
     while(!updateImage || !updateCloud)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-      
+    ROS_INFO("Started begin()");
     //spawn the threads
-    threads.push_back(std::thread(&Receiver::imageDisp, this));
     threads.push_back(std::thread(&Receiver::cloudDisp, this));
-
+    threads.push_back(std::thread(&Receiver::imageDisp, this));
+    ROS_INFO("pushed threads");
     //call join on each thread in turn
     std::for_each(threads.begin(), threads.end(), \
                   std::mem_fn(&std::thread::join)); 
@@ -136,7 +132,6 @@ private:
     PointCloudT cloud;
     getImage(ensensoImage, ir);
     getCloud(ensensoCloud, cloud);
-    ROS_INFO_STREAM("cloud: " << cloud);
 
     std::lock_guard<std::mutex> lock(mutex);
     this->ir = ir;
@@ -145,10 +140,18 @@ private:
     updateCloud = true;
   }
 
-  void getImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) const
+  void getImage(const sensor_msgs::ImageConstPtr msgImage, cv::Mat &image) const
   {    
     cv_bridge::CvImageConstPtr cv_ptr;
-    cv_ptr = cv_bridge::toCvShare(msgImage, msgImage->encoding);
+    try
+    {
+      cv_ptr = cv_bridge::toCvShare(msgImage, sensor_msgs::image_encodings::MONO8);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("cv_bridge exception: %s", e.what());
+      return;
+    }
     cv_ptr->image.copyTo(image);
   }
 
