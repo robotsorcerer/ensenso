@@ -25,22 +25,23 @@ set(PCL_DIR      /usr/local/share/pcl-1.8/)
 find_package(PkgConfig)
 pkg_search_module(Eigen3 REQUIRED eigen3)
 
+find_library(PCL /usr/local/lib NO_DEFAULT_PATH)
+
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   sensor_msgs
-  PCL
+  PCL 
   roslib
   rostime  
   message_filters
   cv_bridge
   image_transport
-  pcl_ros
   roslib
 )
 
 find_package(Ensenso)
-find_package(Boost COMPONENTS filesystem REQUIRED)
+find_package(Boost COMPONENTS filesystem system REQUIRED)
 find_package(MySQL REQUIRED)
 find_package(OpenCV REQUIRED)
 
