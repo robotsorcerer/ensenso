@@ -35,9 +35,6 @@ private:
   using PointT = pcl::PointXYZ;
   using PointCloudT = pcl::PointCloud<PointT>;
   using pcl_viz = pcl::visualization::PCLVisualizer;
-  using imageMsgSub = message_filters::Subscriber<sensor_msgs::Image>;
-  using cloudMsgSub = message_filters::Subscriber<sensor_msgs::PointCloud2>;
-  using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,sensor_msgs::Image>;
 
   bool running, updateCloud, updateImage, save;
   size_t counter;
@@ -57,30 +54,25 @@ private:
 
   ros::AsyncSpinner spinner;
   std::string subNameCloud, subNameIr;
-  imageMsgSub subImageIr;
-  cloudMsgSub subCloud;
 
   std::thread imageDispThread, modelDispThread;
 
   std::vector<std::thread> threads;
-  boost::shared_ptr<visualizer> viz;
   boost::shared_ptr<pcl_viz> viewer;
-  message_filters::Synchronizer<syncPolicy> sync;
 public:
   //constructor
   Receiver()
   : updateCloud(false), updateImage(false), save(false), counter(0), 
-  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
-  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameIr, 1),  
-  sync(syncPolicy(10), subCloud, subImageIr)
+  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/camera"), 
+  spinner(4), subNameCloud(basetopic + "/rospy_cloud"), subNameIr(basetopic + "/image")
   {
-    sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
-
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
 
+    boost::shared_ptr<visualizer> viz (new visualizer);
     viewer=viz->createViewer();
+    nh.subscribe(subNameCloud, 1, &Receiver::callback, this);
+    // nh.subscribe(subNameIr, 1, &Receiver::callback, this);
 
     // imageDispThread = std::thread(&Receiver::imageDisp, this); 
   }
@@ -130,19 +122,24 @@ private:
     running = false;
   }
 
-  void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage)
+  void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
   {
-    cv::Mat ir; 
     PointCloudT cloud;
-    getImage(ensensoImage, ir);
     getCloud(ensensoCloud, cloud);
     ROS_INFO_STREAM("cloud: " << cloud);
 
     std::lock_guard<std::mutex> lock(mutex);
-    this->ir = ir;
     this->cloud = cloud;
-    updateImage = true;
     updateCloud = true;
+  }
+
+  void imageCallBack(const sensor_msgs::ImageConstPtr& ensensoImage)
+  {    
+    cv::Mat ir;
+    getImage(ensensoImage, ir);    
+    std::lock_guard<std::mutex> lock(mutex);
+    this->ir = ir;
+    updateImage = true;
   }
 
   void getImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) const

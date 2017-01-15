@@ -51,26 +51,27 @@ using PointCloudT = pcl::PointCloud<PointT>;
 pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
 /*Globals*/
-sensor_msgs::PointCloud2 pcl2_cloud;   //msg to be displayed in rviz
+sensor_msgs::PointCloud2 pcl2_msg;   //msg to be displayed in rviz
 
-
-void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::shared_ptr<PairOfImages>& images)
+void callback (const PointCloudT::Ptr& cloud, \
+          const boost::shared_ptr<PairOfImages>& images)
 {
   ros::NodeHandle nh;
-  image_transport::ImageTransport it(nh);
-  image_transport::Publisher imagePub = it.advertise("/ensenso/ir_image", 1);
-  ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso/cloud", 1);
+  // image_transport::ImageTransport it(nh);
+  // image_transport::Publisher imagePub = it.advertise("/camera/image", 10);
+  ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso_cloudy", 10);
 
   //prepare cloud for rospy publishing
-  pcl::toROSMsg(*cloud, pcl2_cloud);
-  pcl2_cloud.header.stamp = ros::Time::now();
-  pcl2_cloud.header.frame_id = "ensenso_cloud";
+  pcl::toROSMsg(*cloud, pcl2_msg);
+  pcl2_msg.header.stamp = ros::Time::now();
+  pcl2_msg.header.frame_id = "ensenso_cloud";
 
   /*Process Image and prepare for publishing*/
   unsigned char *l_image_array = reinterpret_cast<unsigned char *> (&images->first.data[0]);
   unsigned char *r_image_array = reinterpret_cast<unsigned char *> (&images->second.data[0]);
 
   ROS_INFO_STREAM("Encoding: " << images->first.encoding);
+  ROS_INFO_STREAM("Cloud size: " << cloud->height * cloud->width);
   
   int type = getOpenCVType (images->first.encoding);
   cv::Mat l_image (images->first.height, images->first.width, type, l_image_array);
@@ -86,18 +87,14 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), images->first.encoding, im).toImageMsg();
 
   /*Publish the image and cloud*/
-  ros::Rate rate(5);
-  if(ros::ok()){
-    imagePub.publish(msg);
-    pclPub.publish(pcl2_cloud);
-    rate.sleep();
-  }
+  pclPub.publish(pcl2_msg);
+  // imagePub.publish(msg);  
 }
 
 int main (int argc, char** argv)
 {
-  ros::init(argc, argv, "ensensor_bridge_node");  
-
+  ros::init(argc, argv, "ensensor_bridge_node"); 
+  ros::start();
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
@@ -106,17 +103,22 @@ int main (int argc, char** argv)
   ensenso_ptr->enumDevices();
 
   //ensenso_ptr->initExtrinsicCalibration (5); // Disable projector if you want good looking images.
-  boost::function<void(const boost::shared_ptr<PointCloudT>&, const boost::shared_ptr<PairOfImages>&)> f \
-                                = boost::bind(&grabberCallback, _1, _2);
-  ensenso_ptr->registerCallback (f);
+  boost::function<void(const PointCloudT::Ptr&, const boost::shared_ptr<PairOfImages>&)> f \
+                                = boost::bind(&callback, _1, _2);
+
   ensenso_ptr->start ();
 
-  ros::spin();
+  ros::Rate rate(5);
+  while(ros::ok())
+  {    
+    ensenso_ptr->registerCallback (f);
+    ros::spin();
+    rate.sleep();
+  }
 
   ensenso_ptr->stop ();
   ensenso_ptr->closeDevice ();
   ensenso_ptr->closeTcpPort ();
-
 
   return EXIT_SUCCESS;
 }
