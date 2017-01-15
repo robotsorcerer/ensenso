@@ -52,14 +52,16 @@ pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
 /*Globals*/
 sensor_msgs::PointCloud2 pcl2_msg;   //msg to be displayed in rviz
+ros::Publisher pclPub;
+image_transport::Publisher imagePub;
 
 void callback (const PointCloudT::Ptr& cloud, \
           const boost::shared_ptr<PairOfImages>& images)
 {
   ros::NodeHandle nh;
-  // image_transport::ImageTransport it(nh);
-  // image_transport::Publisher imagePub = it.advertise("/camera/image", 10);
-  ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso_cloudy", 10);
+  image_transport::ImageTransport it(nh);
+  imagePub = it.advertise("/camera/ir_image", 10);
+  pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso/cloud", 10);
 
   //prepare cloud for rospy publishing
   pcl::toROSMsg(*cloud, pcl2_msg);
@@ -88,7 +90,7 @@ void callback (const PointCloudT::Ptr& cloud, \
 
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
-  // imagePub.publish(msg);  
+  imagePub.publish(msg);  
 }
 
 int main (int argc, char** argv)
@@ -108,7 +110,7 @@ int main (int argc, char** argv)
 
   ensenso_ptr->start ();
 
-  ros::Rate rate(5);
+  ros::Rate rate(30);
   while(ros::ok())
   {    
     ensenso_ptr->registerCallback (f);
