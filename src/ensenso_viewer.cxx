@@ -70,7 +70,7 @@ public:
   Receiver()
   : updateCloud(false), updateImage(false), save(false), counter(0), 
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
+  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"), 
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),  
   sync(syncPolicy(10), subCloud, subImageIr)
   {
