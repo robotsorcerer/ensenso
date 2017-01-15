@@ -63,7 +63,6 @@ private:
   std::thread imageDispThread, modelDispThread;
 
   std::vector<std::thread> threads;
-  boost::shared_ptr<visualizer> viz;
   boost::shared_ptr<pcl_viz> viewer;
   message_filters::Synchronizer<syncPolicy> sync;
 public:
@@ -72,7 +71,7 @@ public:
   : updateCloud(false), updateImage(false), save(false), counter(0), 
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
   spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/ir_image"), 
-  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameIr, 1),  
+  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),  
   sync(syncPolicy(10), subCloud, subImageIr)
   {
     sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
@@ -80,6 +79,7 @@ public:
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
 
+    boost::shared_ptr<visualizer> viz (new visualizer);
     viewer=viz->createViewer();
 
     // imageDispThread = std::thread(&Receiver::imageDisp, this); 
