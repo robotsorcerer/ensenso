@@ -152,12 +152,12 @@ void grabberCallback (const boost::shared_ptr<PointCloudT>& cloud, const boost::
   }
 
   /*Publish the damn image and cloud*/
-  // ros::Rate rate(5);
-  // if(ros::ok()){
-  //   imagePub.publish(msg);
-  //   pclPub.publish(pcl2_cloud);
-  //   rate.sleep();
-  // }
+  ros::Rate rate(5);
+  if(ros::ok()){
+    imagePub.publish(msg);
+    pclPub.publish(pcl2_cloud);
+    rate.sleep();
+  }
 }
 
 int main (int argc, char** argv)
