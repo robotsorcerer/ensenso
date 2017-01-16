@@ -192,6 +192,9 @@ private:
     cv::Mat ir;  
     PointCloudT cloud; 
 
+    cv::namedWindow(windowName, cv::WINDOW_NORMAL);
+    cv::resizeWindow(windowName, 640, 480) ;
+
     for(; running && ros::ok();)
     {
       if(updateImage)
@@ -201,8 +204,6 @@ private:
         cloud = this->cloud;
         updateImage = false;
 
-        cv::namedWindow(windowName, cv::WINDOW_NORMAL);
-        cv::resizeWindow(windowName, 640, 480) ;
         cv::imshow(windowName, ir);
       }
 
@@ -238,6 +239,7 @@ private:
       {   
         std::lock_guard<std::mutex> lock(mutex); 
         updateCloud = false;
+        // viewer->removePointCloud(cloudName);
         viewer->updatePointCloud(cloud_ptr, cloudName);
         if(save)
         {            
@@ -248,6 +250,7 @@ private:
       viewer->spinOnce(10);
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    viewer->close();
   }
 };
 
