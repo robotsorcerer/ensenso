@@ -40,6 +40,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 /*pcl and cv headers*/
+#include <ensenso/pcl_headers.h>
 #include <ensenso/ensenso_headers.h>
 
 /*typedefs*/

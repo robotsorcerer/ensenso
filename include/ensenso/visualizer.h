@@ -3,20 +3,7 @@
 
 #define SENSOR_IP			    "192.168.1.10"			
 
-#include <pcl_ros/point_cloud.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/console/parse.h>
-#include <pcl/visualization/cloud_viewer.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/visualization/pcl_visualizer.h>
-
-#include <pcl/common/common_headers.h>
-#include <pcl/range_image/range_image.h>
-#include <pcl/visualization/range_image_visualizer.h>
-
-#include <boost/thread/thread.hpp>
+#include <ensenso/pcl_headers.h>
 
 #include <sstream>
 #include <string>

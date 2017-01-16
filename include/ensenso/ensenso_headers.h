@@ -1,10 +1,6 @@
 #ifndef _ENSENSO_HEADERS_H_
 #define _ENSENSO_HEADERS_H_
 
-#include <pcl/common/common.h>
-#include <pcl/common/transforms.h>
-#include <pcl/io/ensenso_grabber.h>
-
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 

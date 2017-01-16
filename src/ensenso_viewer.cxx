@@ -10,9 +10,7 @@
 #include <ensenso/visualizer.h>
 #include <ensenso/ensenso_headers.h>
 
-#include <pcl/conversions.h>
-#include <pcl/PCLPointCloud2.h>
-#include <pcl_conversions/pcl_conversions.h>
+#include <ensenso/pcl_headers.h>
 
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -30,6 +28,7 @@
 /*Globlal namespaces and aliases*/
 using namespace pathfinder;
 
+/*aliases*/
 using PointT = pcl::PointXYZ;
 using PointCloudT = pcl::PointCloud<PointT>;
 using pcl_viz = pcl::visualization::PCLVisualizer;
@@ -64,9 +63,8 @@ private:
   imageMsgSub subImageIr;
   cloudMsgSub subCloud;
 
-  std::thread imageDispThread, modelDispThread;
-
   std::vector<std::thread> threads;
+
   boost::shared_ptr<pcl_viz> viewer;
   message_filters::Synchronizer<syncPolicy> sync;
 public:
@@ -80,16 +78,17 @@ public:
   sync(syncPolicy(10), subCloud, subImageIr)
   {
     sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
-    ROS_INFO("available #hardware_threads: %lu", hardware_threads);
+    ROS_INFO_STREAM("#Hardware Concurrency: " << hardware_threads <<
+      "\t. Spinning with " << hardware_threads/4 << " threads");
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
 
     boost::shared_ptr<visualizer> viz (new visualizer);
-    viewer=viz->createViewer();
+    viewer= viz->createViewer();
   }
   //destructor
   ~Receiver()
-  {
+  { 
 
   }
 
@@ -108,18 +107,15 @@ private:
     if(spinner.canStart())  
     {   
       spinner.start();  
-      ROS_INFO("started spinner");
     }
     running = true;
     while(!updateImage || !updateCloud)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    ROS_INFO("Started begin()");
+    }    
     //spawn the threads
     threads.push_back(std::thread(&Receiver::cloudDisp, this));
     threads.push_back(std::thread(&Receiver::imageDisp, this));
-    ROS_INFO("pushed threads");
     //call join on each thread in turn
     std::for_each(threads.begin(), threads.end(), \
                   std::mem_fn(&std::thread::join)); 
@@ -232,7 +228,9 @@ private:
 
   void cloudDisp()
   {
-    const PointCloudT& cloud  = this->cloud;    
+    // const PointCloudT cloud (new const PointCloudT);
+    const PointCloudT& cloud  = this->cloud;   
+    // cloud  = this->cloud;  
     PointCloudT::ConstPtr cloud_ptr (&cloud);
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
     cv::Mat ir = this->ir;
@@ -253,9 +251,9 @@ private:
         saveCloudAndImage(cloud, ir);
       }
       viewer->spinOnce(10);
-      // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    viewer->close();
+    // viewer->close();
   }
 };
 
