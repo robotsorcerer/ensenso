@@ -1,11 +1,15 @@
+#include <mutex>
+#include <thread>
 #include <ros/spinner.h>
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
 #include <sensor_msgs/PointCloud2.h>
 
-#include <mutex>
-#include <thread>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/surface/convex_hull.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/segmentation/extract_polygonal_prism_data.h>
 
 /*Globlal namespaces and aliases*/
 // using namespace pathfinder;
@@ -34,8 +38,9 @@ private:
  	std::thread cloudDispThread, normalsDispThread;
  	unsigned long const hardware_concurrency;
  	ros::AsyncSpinner spinner;
- 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
-	NormalEstimation normalEstimation;
+ 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer, segViewer;
+ 	boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer;
+ 	NormalEstimation normalEstimation;
 	PointCloudNPtr normals;
 
 	boost::shared_ptr<visualizer> viz;
@@ -47,7 +52,7 @@ public:
 	spinner(hardware_concurrency/2)
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
-	    normals = PointCloudNPtr(new PointCloudN());
+		    normals = PointCloudNPtr(new PointCloudN());
 	}
 
 	~Segmentation()
@@ -75,11 +80,14 @@ public:
 		}
 
 		//spawn the threads
-	    threads.push_back(std::thread(&Segmentation::cloudDisp, this));
+	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
+	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
+
 	    std::for_each(threads.begin(), threads.end(), \
 	                  std::mem_fn(&std::thread::join)); 
-	    cloudDispThread = std::thread(&Segmentation::cloudDisp, this);
-	    ROS_INFO("pushed threads");
+
+	    // cloudDispThread = std::thread(&Segmentation::cloudDisp, this);
+	    normals = PointCloudNPtr (new PointCloudN());	
 	}
 
 	void end()
@@ -90,15 +98,13 @@ public:
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
 	{
-		PointCloudT cloud;
-		PointCloudNPtr normals_(new PointCloudN());		
+		PointCloudT cloud;	
 
 		getCloud(ensensoCloud, cloud);
-		// getSurfaceNormals(cloud, normals_);
+		// getSurfaceNormals(cloud, this->normals);
 
 		std::lock_guard<std::mutex> lock(mutex);
 		this->cloud = cloud;
-		// this->normals = normals_;
 		updateCloud = true;
 	}
 
@@ -138,7 +144,7 @@ public:
 	  viewer->close();
 	}
 
-	void getSurfaceNormals(const PointCloudT& cloud, PointCloudNPtr normals)
+	void getSurfaceNormals(const PointCloudT& cloud, const PointCloudNPtr normals)
 	{
 		PointCloudT::ConstPtr cloud_ptr (&cloud);
 		normalEstimation.setInputCloud(cloud_ptr);
@@ -149,6 +155,109 @@ public:
 
 		// Calculate the normals.
 		normalEstimation.compute(*normals);
+	}
+
+	void planeSeg()
+	{
+		// Objects for storing the point clouds.
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr plane(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr convexHull(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr objects(new pcl::PointCloud<pcl::PointXYZ>);
+
+		//Get Plane Model
+		pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
+		pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+		// Create the segmentation object
+		pcl::SACSegmentation<PointT> seg;
+		// Optional
+		seg.setOptimizeCoefficients (true);
+		// Mandatory
+		seg.setModelType (pcl::SACMODEL_PLANE);
+		seg.setMethodType (pcl::SAC_RANSAC);
+		seg.setDistanceThreshold (0.01);
+
+		{
+			// mutex.lock();
+			std::lock_guard<std::mutex> lock(mutex);
+			*cloud = this->cloud;			
+			updateCloud = false;	
+		}
+
+		seg.setInputCloud (cloud);
+		seg.segment (*inliers, *coefficients);
+
+		if(inliers->indices.size() == 0)
+			ROS_INFO("Could not find plane in scene");
+		else
+		{
+			// Copy the points of the plane to a new cloud.
+			pcl::ExtractIndices<pcl::PointXYZ> extract;
+			extract.setInputCloud(cloud);
+			extract.setIndices(inliers);
+			extract.filter(*plane);
+
+			//retrieve convex hull
+			pcl::ConvexHull<PointT> hull;
+			hull.setInputCloud(plane);
+
+			//ensure hull is 2 -d
+			hull.setDimension(2);
+			hull.reconstruct(*convexHull);
+
+			//redundant check
+			if (hull.getDimension() == 2)
+			{
+				// Prism object.
+				pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+				prism.setInputCloud(cloud);
+				prism.setInputPlanarHull(convexHull);
+				// First parameter: minimum Z value. Set to 0, segments objects lying on the plane (can be negative).
+				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the objects you expect.
+				prism.setHeightLimits(0.0f, 0.1f);
+				pcl::PointIndices::Ptr objectIndices(new pcl::PointIndices);
+
+				prism.segment(*objectIndices);
+
+				// Get and show all points retrieved by the hull.
+				extract.setIndices(objectIndices);
+				extract.filter(*objects);
+
+				multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));   
+				multiViewer->initCameraParameters ();
+
+				int v1(0);
+				multiViewer->createViewPort(0.0, 0.0, 0.5, 1.0, v1);
+				multiViewer->setBackgroundColor (0, 0, 0, v1);
+				multiViewer->addText("Original Cloud: 0.01", 10, 10, "v1 text", v1);
+				multiViewer->addPointCloud(cloud, "Original Cloud", v1);
+
+				int v2(0);
+				multiViewer->createViewPort(0.5, 0.0, 1.0, 1.0, v2);
+				multiViewer->setBackgroundColor (0.3, 0.3, 0.3, v2);
+				multiViewer->addText("Segmented Cloud", 10, 10, "v2 text", v2);
+				multiViewer->addPointCloud(objects, "Segmented Cloud", v2);
+
+				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
+				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
+
+				while (running && ros::ok())
+				{
+					/*populate the cloud viewer and prepare for publishing*/
+					if(updateCloud)
+					{   
+					  std::lock_guard<std::mutex> lock(mutex); 
+					  updateCloud = false;
+					  multiViewer->updatePointCloud(cloud, "Original Cloud");
+					  multiViewer->updatePointCloud(objects, "Segmented Cloud");
+					}	    
+					multiViewer->spinOnce(10);
+				}
+				multiViewer->close();
+			}
+			else
+				ROS_INFO("Chosen hull is not planar");
+		}
 	}
 };
 
