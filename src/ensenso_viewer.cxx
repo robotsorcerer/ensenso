@@ -234,7 +234,7 @@ private:
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
     cv::Mat ir = this->ir;    
     viz = boost::shared_ptr<visualizer> (new visualizer());
-    viewer= viz->createViewer();
+    viewer= viz->createViewer();    
     viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
 
     for(; running && ros::ok() ;)

@@ -31,35 +31,28 @@ private:
 	ros::Subscriber cloud_sub_;
 	std::mutex mutex;
  	PointCloudT cloud;  
- 	std::thread cloudDispThread,normalsDispThread;
+ 	std::thread cloudDispThread, normalsDispThread;
  	unsigned long const hardware_concurrency;
  	ros::AsyncSpinner spinner;
  	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
 	NormalEstimation normalEstimation;
 	PointCloudNPtr normals;
 
-
+	boost::shared_ptr<visualizer> viz;
+	std::vector<std::thread> threads;
 public:
-	Segmentation(bool running_)
-	: updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
+	Segmentation(bool running_, ros::NodeHandle nh)
+	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
 	hardware_concurrency(std::thread::hardware_concurrency()),
 	spinner(hardware_concurrency/2)
-	{		
-		boost::shared_ptr<visualizer> viz (new visualizer);
-		viewer = viz->createViewer();
-
-		OUT("Hardware Concurrency: " << hardware_concurrency <<
-			"\t. Spinning with " << hardware_concurrency/2 << " threads");
-
-	    cloud_sub_ = nh_.subscribe("/ensenso/cloud", 1, 
-	          &Segmentation::cloudCallback, this);
-
+	{	
+	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
 	    normals = PointCloudNPtr(new PointCloudN());
 	}
 
 	~Segmentation()
 	{
-		viewer->close();
+		// viewer->close();
 	}
 
 	void spawn()
@@ -68,13 +61,12 @@ public:
 		end();
 	}
 
-
-private:
 	void begin()
 	{
 		if(spinner.canStart())
 		{
 			spinner.start();
+			ROS_INFO("started spinner");
 		}
 
 		while(!updateCloud)
@@ -82,12 +74,18 @@ private:
 		  std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
-		cloudDispThread = std::thread(&Segmentation::cloudDisp, this);
+		//spawn the threads
+	    threads.push_back(std::thread(&Segmentation::cloudDisp, this));
+	    std::for_each(threads.begin(), threads.end(), \
+	                  std::mem_fn(&std::thread::join)); 
+	    cloudDispThread = std::thread(&Segmentation::cloudDisp, this);
+	    ROS_INFO("pushed threads");
 	}
 
 	void end()
 	{
 	  spinner.stop(); 
+	  running = false;
 	}
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
@@ -96,11 +94,11 @@ private:
 		PointCloudNPtr normals_(new PointCloudN());		
 
 		getCloud(ensensoCloud, cloud);
-		getSurfaceNormals(cloud, normals_);
+		// getSurfaceNormals(cloud, normals_);
 
 		std::lock_guard<std::mutex> lock(mutex);
 		this->cloud = cloud;
-		this->normals = normals_;
+		// this->normals = normals_;
 		updateCloud = true;
 	}
 
@@ -115,26 +113,29 @@ private:
 	{
 	  const PointCloudT& cloud  = this->cloud;    
 	  PointCloudT::ConstPtr cloud_ptr (&cloud);
+	  PointCloudNPtr normals(new PointCloudN);
+	  normals = this->normals;  
 	  
-	  PointCloudNPtr normals( new PointCloudN);
-	  // normals = this->normals;
-	  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);	  
+	  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);	
+	  viz = boost::shared_ptr<visualizer> (new visualizer());
+
+	  viewer= viz->createViewer();    
+	  viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
+	  viewer->addPointCloudNormals<PointT, PointN>(cloud_ptr, normals, 20, 0.03, "normals");
+
 	  for(; running && ros::ok() ;)
 	  {
-	    viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
-	    // viewer->addPointCloudNormals<PointT, PointN>(cloud_ptr, normals, 20, 0.03, "normals");
 	    /*populate the cloud viewer and prepare for publishing*/
 	    if(updateCloud)
 	    {   
 	      std::lock_guard<std::mutex> lock(mutex); 
 	      updateCloud = false;
-	      // viewer->removePointCloud(cloudName);
 	      viewer->updatePointCloud(cloud_ptr, cloudName);
 	      // viewer->addPointCloudNormals<PointT, PointN>(cloud_ptr, normals, 20, 0.03, "normals");
 	    }	    
 	    viewer->spinOnce(10);
 	  }
-	  // viewer->close();
+	  viewer->close();
 	}
 
 	void getSurfaceNormals(const PointCloudT& cloud, PointCloudNPtr normals)
@@ -158,8 +159,9 @@ int main(int argc, char* argv[])
 	ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
 	bool running = true;
-	Segmentation seg(running);
+	ros::NodeHandle nh;
 
+	Segmentation seg(running, nh);
 	seg.spawn();
 
 	ros::shutdown();
