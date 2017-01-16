@@ -72,7 +72,7 @@ public:
 	 	viewer->setCameraPosition(pos_x, pos_y, pos_z, view_x, view_y, view_z) ;	
 	 	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, \
 	 		                                      50.0,/* 13.0, 13.0,*/ pcl_viewer, viewport);
-	 	viewer->addCoordinateSystem(0.5);
+	 	// viewer->addCoordinateSystem(0.5);
 	 	viewer->registerKeyboardCallback(&visualizer::keyboardEventOccurred, *this);	 	
 
 	  return (viewer);

@@ -67,12 +67,14 @@ private:
 
   boost::shared_ptr<pcl_viz> viewer;
   message_filters::Synchronizer<syncPolicy> sync;
+
+  boost::shared_ptr<visualizer> viz;
 public:
   //constructor
   Receiver()
   : updateCloud(false), updateImage(false), save(false), counter(0), 
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  hardware_threads(std::thread::hardware_concurrency()),  spinner(4), 
+  hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2), 
   subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"), 
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),  
   sync(syncPolicy(10), subCloud, subImageIr)
@@ -82,9 +84,6 @@ public:
       "\t. Spinning with " << hardware_threads/4 << " threads");
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
-
-    boost::shared_ptr<visualizer> viz (new visualizer);
-    viewer= viz->createViewer();
   }
   //destructor
   ~Receiver()
@@ -230,19 +229,21 @@ private:
   {
     // const PointCloudT cloud (new const PointCloudT);
     const PointCloudT& cloud  = this->cloud;   
-    // cloud  = this->cloud;  
     PointCloudT::ConstPtr cloud_ptr (&cloud);
+
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
-    cv::Mat ir = this->ir;
+    cv::Mat ir = this->ir;    
+    viz = boost::shared_ptr<visualizer> (new visualizer());
+    viewer= viz->createViewer();
+    viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
+
     for(; running && ros::ok() ;)
     {
-      viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
       /*populate the cloud viewer and prepare for publishing*/
       if(updateCloud)
       {   
         std::lock_guard<std::mutex> lock(mutex); 
         updateCloud = false;
-        // viewer->removePointCloud(cloudName);
         viewer->updatePointCloud(cloud_ptr, cloudName);
       }
       if(save)
@@ -251,9 +252,8 @@ private:
         saveCloudAndImage(cloud, ir);
       }
       viewer->spinOnce(10);
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    // viewer->close();
+    viewer->close();
   }
 };
 
