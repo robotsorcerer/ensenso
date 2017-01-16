@@ -78,7 +78,10 @@ if(ENSENSO_FOUND)
 
   set(viewer_files src/ensenso_viewer.cxx 
                    src/factory_functions.cxx
-                    src/pathfinder.cxx)                    
+                    src/pathfinder.cxx)    
+
+  #add correspondence grouping library
+  add_library(ensenso_grouping src/ensenso_correspondence.cxx)
 
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
@@ -92,6 +95,8 @@ if(ENSENSO_FOUND)
   target_link_libraries(ensenso_viewer
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
+
+  target_link_libraries(ensenso_grouping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})
 
 else(ENSENSO_FOUND)
 	message(WARNING "Ensenso SDK not found. Not building ensenso interface code.")

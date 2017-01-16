@@ -26,15 +26,18 @@
 #include <message_filters/sync_policies/approximate_time.h>
 
 #define OUT(__x__) std::cout << __x__ << std::endl;
+
+/*Globlal namespaces and aliases*/
 using namespace pathfinder;
+
+using PointT = pcl::PointXYZ;
+using PointCloudT = pcl::PointCloud<PointT>;
+using pcl_viz = pcl::visualization::PCLVisualizer;
 
 class Receiver
 {
 private:  
-  /*typedefs*/
-  using PointT = pcl::PointXYZ;
-  using PointCloudT = pcl::PointCloud<PointT>;
-  using pcl_viz = pcl::visualization::PCLVisualizer;
+  /*aliases*/
   using imageMsgSub = message_filters::Subscriber<sensor_msgs::Image>;
   using cloudMsgSub = message_filters::Subscriber<sensor_msgs::PointCloud2>;
   using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,sensor_msgs::Image>;
@@ -55,6 +58,7 @@ private:
   std::string subNameDepth;
   PointCloudT cloud;  
 
+  unsigned long const hardware_threads;
   ros::AsyncSpinner spinner;
   std::string subNameCloud, subNameIr;
   imageMsgSub subImageIr;
@@ -70,12 +74,13 @@ public:
   Receiver()
   : updateCloud(false), updateImage(false), save(false), counter(0), 
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  spinner(4), subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"), 
+  hardware_threads(std::thread::hardware_concurrency()),  spinner(4), 
+  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"), 
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),  
   sync(syncPolicy(10), subCloud, subImageIr)
   {
     sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
-
+    ROS_INFO("available #hardware_threads: %lu", hardware_threads);
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
 
@@ -241,14 +246,14 @@ private:
         updateCloud = false;
         // viewer->removePointCloud(cloudName);
         viewer->updatePointCloud(cloud_ptr, cloudName);
-        if(save)
-        {            
-          save = false;
-          saveCloudAndImage(cloud, ir);
-        }
+      }
+      if(save)
+      {            
+        save = false;
+        saveCloudAndImage(cloud, ir);
       }
       viewer->spinOnce(10);
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      // std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     viewer->close();
   }

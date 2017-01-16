@@ -49,7 +49,7 @@ public:
 		viewport(0), updateCloud(false), save(false), screen_height(640), 
 		screen_width(480), pcl_viewer("ensenso cloud")
 	{
-		/*Use std::initializer_liust ctro; vector has 2-elements*/
+		start();
 	}
 
 	//Destructor
@@ -85,26 +85,11 @@ public:
 	 	viewer->setCameraPosition(pos_x, pos_y, pos_z, view_x, view_y, view_z) ;	
 	 	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, \
 	 		                                      50.0,/* 13.0, 13.0,*/ pcl_viewer, viewport);
-	 	// viewer->addCoordinateSystem(0.5);
+	 	viewer->addCoordinateSystem(0.5);
 	 	viewer->registerKeyboardCallback(&visualizer::keyboardEventOccurred, *this);	 	
 
 	  return (viewer);
 	}
-
-	boost::shared_ptr<pcl::visualization::PCLVisualizer> colorViewer()
-	{
-	  boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("Colored Viewer"));
-	  viewer->setBackgroundColor (0, 0, 0);
-	  viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, pcl_viewer);
-	  viewer->setSize(screen_height, screen_width);
-	  viewer->setCameraPosition(pos_x, pos_y, pos_z, view_x, view_y, view_z) ;	
-	  viewer->setShowFPS(true);
-	  viewer->initCameraParameters ();
-	  viewer->addCoordinateSystem (1.0);
-	 	// viewer->registerKeyboardCallback(&visualizer::keyboardEventOccurred, *this);
-	  return (viewer);
-	}
-
 
 	void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
 	                            void* )
@@ -114,7 +99,7 @@ public:
 	  	switch(event.getKeyCode())
 	  	{
 	  		case 'q':
-	  		  // this->quit();
+	  		  this->quit();
 	  		  break;
 	  		case ' ':	
 	  		case 's':
@@ -138,6 +123,11 @@ public:
 	    sprintf (str, "text#%03d", text_id ++);
 	    viewer->addText ("clicked here", event.getX (), event.getY (), str);
 	  }
+	}
+
+	void quit()
+	{
+		ros::shutdown();
 	}
 };
 
