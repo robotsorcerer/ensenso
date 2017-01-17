@@ -50,16 +50,15 @@ private:
 public:
 	Segmentation(bool running_, ros::NodeHandle nh)
 	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
-	hardware_concurrency(std::thread::hardware_concurrency()),
+	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.6953f),
 	spinner(hardware_concurrency/2)
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
-		    normals = PointCloudNPtr(new PointCloudN());
 	}
 
 	~Segmentation()
 	{
-		// viewer->close();
+
 	}
 
 	void spawn()
@@ -73,7 +72,7 @@ public:
 		if(spinner.canStart())
 		{
 			spinner.start();
-			ROS_INFO("started spinner");
+			ROS_INFO("spinning with %lu threads", hardware_concurrency/2);
 		}
 
 		while(!updateCloud)
@@ -83,13 +82,9 @@ public:
 
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
-	    threads.push_back(std::thread(&Segmentation::headSeg, this));
-
+	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
 	    std::for_each(threads.begin(), threads.end(), \
 	                  std::mem_fn(&std::thread::join)); 
-
-	    // cloudDispThread = std::thread(&Segmentation::cloudDisp, this);
-	    normals = PointCloudNPtr (new PointCloudN());	
 	}
 
 	void end()
@@ -103,8 +98,6 @@ public:
 		PointCloudT cloud;	
 
 		getCloud(ensensoCloud, cloud);
-		// getSurfaceNormals(cloud, this->normals);
-
 		std::lock_guard<std::mutex> lock(mutex);
 		this->cloud = cloud;
 		updateCloud = true;
@@ -129,7 +122,6 @@ public:
 
 	  viewer= viz->createViewer();    
 	  viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
-	  viewer->addPointCloudNormals<PointT, PointN>(cloud_ptr, normals, 20, 0.03, "normals");
 
 	  for(; running && ros::ok() ;)
 	  {
@@ -139,56 +131,56 @@ public:
 	      std::lock_guard<std::mutex> lock(mutex); 
 	      updateCloud = false;
 	      viewer->updatePointCloud(cloud_ptr, cloudName);
-	      // viewer->addPointCloudNormals<PointT, PointN>(cloud_ptr, normals, 20, 0.03, "normals");
 	    }	    
 	    viewer->spinOnce(10);
 	  }
 	  viewer->close();
 	}
 
-	void getSurfaceNormals(const PointCloudT& cloud, const PointCloudNPtr normals)
-	{
-		PointCloudT::ConstPtr cloud_ptr (&cloud);
-		normalEstimation.setInputCloud(cloud_ptr);
-		normalEstimation.setRadiusSearch(0.03); //use all neighbors in a radius of 3cm.
-		// use a kd-tree to search for neighbors.
-		pcl::search::KdTree<PointT>::Ptr kdtree(new pcl::search::KdTree<PointT>);
-		normalEstimation.setSearchMethod(kdtree);
-
-		// Calculate the normals.
-		normalEstimation.compute(*normals);
-	}
-
 	void planeSeg()
-	{
+	{	/*Generic initializations*/
 		// Objects for storing the point clouds.
-		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr segCloud(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr plane(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr convexHull(new pcl::PointCloud<pcl::PointXYZ>);
-		pcl::PointCloud<pcl::PointXYZ>::Ptr objects(new pcl::PointCloud<pcl::PointXYZ>);
-
+		pcl::PointCloud<pcl::PointXYZ>::Ptr faces(new pcl::PointCloud<pcl::PointXYZ>);
 		//Get Plane Model
 		pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
 		pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+		//indices of segmented face
+		pcl::PointIndices::Ptr faceIndices(new pcl::PointIndices);
+		// Prism object.
+		pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+
+		//viewer for segmentation and stuff
+		multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));   
+		multiViewer->initCameraParameters ();
+		int v1(0);
+		multiViewer->createViewPort(0.0, 0.0, 0.5, 1.0, v1);
+		multiViewer->setBackgroundColor (0, 0, 0, v1);
+		multiViewer->addText("Original Cloud", 10, 10, "v1 text", v1);
+		int v2(0);
+		multiViewer->createViewPort(0.5, 0.0, 1.0, 1.0, v2);
+		multiViewer->setBackgroundColor (0.3, 0.3, 0.3, v2);
+		multiViewer->addText("Segmented Cloud", 10, 10, "v2 text", v2);
+
 		// Create the segmentation object
 		pcl::SACSegmentation<PointT> seg;
 		// Optional
 		seg.setOptimizeCoefficients (true);
 		/*Set the maximum number of iterations before giving up*/
-		seg.setMaxIterations(100);
-		// Mandatory
+		seg.setMaxIterations(60);
 		seg.setModelType (pcl::SACMODEL_PLANE); 
 		seg.setMethodType (pcl::SAC_RANSAC);
 		/*set the distance to the model threshold to use*/
-		distThreshold = 0.712;
 		seg.setDistanceThreshold (distThreshold);	//as measured
 		{
-			std::lock_guard<std::mutex> lock(mutex);
-			*cloud = this->cloud;			
+			std::lock_guard<std::mutex> lock(mutex);	
+			//it is important to pass this->cloud by ref in order to see updates on screen
+			segCloud = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> >(&this->cloud);
 			updateCloud = false;	
 		}
-
-		seg.setInputCloud (cloud);
+		seg.setInputCloud (segCloud);
 		seg.segment (*inliers, *coefficients);
 
 		if(inliers->indices.size() == 0)
@@ -197,7 +189,7 @@ public:
 		{
 			// Copy the points of the plane to a new cloud.
 			pcl::ExtractIndices<pcl::PointXYZ> extract;
-			extract.setInputCloud(cloud);
+			extract.setInputCloud(segCloud);
 			extract.setIndices(inliers);
 			extract.filter(*plane);
 
@@ -212,37 +204,19 @@ public:
 			//redundant check
 			if (hull.getDimension() == 2)
 			{
-				// Prism object.
-				pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
-				prism.setInputCloud(cloud);
+				prism.setInputCloud(segCloud);
 				prism.setInputPlanarHull(convexHull);
-				// First parameter: minimum Z value. Set to 0, segments objects lying on the plane (can be negative).
-				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the objects you expect.
-				// prism.setHeightLimits(0.1f, 0.5f);
-				zmin = 0.2f; zmax = 0.4953f+0.2f;
+				// First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
+				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
 				prism.setHeightLimits(zmin, zmax);
-				pcl::PointIndices::Ptr objectIndices(new pcl::PointIndices);
-
-				prism.segment(*objectIndices);
+				prism.segment(*faceIndices);
 
 				// Get and show all points retrieved by the hull.
-				extract.setIndices(objectIndices);
-				extract.filter(*objects);
+				extract.setIndices(faceIndices);
+				extract.filter(*faces);
 
-				multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));   
-				multiViewer->initCameraParameters ();
-
-				int v1(0);
-				multiViewer->createViewPort(0.0, 0.0, 0.5, 1.0, v1);
-				multiViewer->setBackgroundColor (0, 0, 0, v1);
-				multiViewer->addText("Original Cloud: 0.01", 10, 10, "v1 text", v1);
-				multiViewer->addPointCloud(cloud, "Original Cloud", v1);
-
-				int v2(0);
-				multiViewer->createViewPort(0.5, 0.0, 1.0, 1.0, v2);
-				multiViewer->setBackgroundColor (0.3, 0.3, 0.3, v2);
-				multiViewer->addText("Segmented Cloud", 10, 10, "v2 text", v2);
-				multiViewer->addPointCloud(objects, "Segmented Cloud", v2);
+				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
+				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
 
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
@@ -254,8 +228,13 @@ public:
 					{   
 					  std::lock_guard<std::mutex> lock(mutex); 
 					  updateCloud = false;
-					  multiViewer->updatePointCloud(cloud, "Original Cloud");
-					  multiViewer->updatePointCloud(objects, "Segmented Cloud");
+					  multiViewer->updatePointCloud(segCloud, "Original Cloud");
+
+					  prism.segment(*faceIndices);
+					  extract.setIndices(faceIndices);
+					  extract.filter(*faces);
+
+					  multiViewer->updatePointCloud(faces, "Segmented Cloud");
 					}	    
 					multiViewer->spinOnce(10);
 				}
@@ -270,7 +249,6 @@ public:
 int main(int argc, char* argv[])
 {
 	ros::init(argc, argv, "ensensor_segmentation_node"); 
-
 	ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
 	bool running = true;
