@@ -57,6 +57,7 @@ ros::Publisher pclPub;
 image_transport::Publisher imagePub, leftImagePub, rightImagePub;
 image_transport::CameraPublisher  leftCamPub, rightCamPub;
 std::string encoding = "mono8";
+bool filter = true;
 
 void initPublishers()
 {
