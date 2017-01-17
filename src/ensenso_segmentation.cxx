@@ -113,9 +113,10 @@ public:
 	void cloudDisp() 
 	{
 	  const PointCloudT& cloud  = this->cloud;    
-	  PointCloudT::ConstPtr cloud_ptr (&cloud);
-	  PointCloudNPtr normals(new PointCloudN);
-	  normals = this->normals;  
+	  PointCloudT::ConstPtr cloud_ptr (&cloud);	  
+	  /*me must */
+	  // PointCloudT::ConstPtr cloud_ptr(new PointCloudT::ConstPtr);
+	  cloud_ptr = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> >(&this->cloud);
 	  
 	  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);	
 	  viz = boost::shared_ptr<visualizer> (new visualizer());
