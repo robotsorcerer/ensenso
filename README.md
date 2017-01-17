@@ -28,11 +28,12 @@ The sensor captures a single 3D profile for each camera exposure. The Ensenso ca
   <img src="/images/fancy2.png" height="250" width="45%" align="right" style="border-left: 1px solid black;">
   </br>
   <div class="figcaption" align="middle">
-    Left: Raw Image from the Sensor's Camera<br>
-    Right(left: inset): Point Cloud from scene of the head &nbsp; <br>
-    Right(right inset): Point Cloud after segmenting face from head 
   </div>
 </div>
+<br>
+  Figure 1: Left: Raw Image from the Sensor's Camera<br>
+  Right(left: inset): Point Cloud from scene of the head &nbsp; <br>
+    Right(right inset): Point Cloud after segmenting face from head 
 
 #### Dependencies
 	
