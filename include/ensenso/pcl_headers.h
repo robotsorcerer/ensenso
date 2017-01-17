@@ -33,4 +33,5 @@
 #include <pcl/segmentation/sac_segmentation.h>
 
 /*Filters, Indices*/
+#include <pcl/filters/passthrough.h>
 
