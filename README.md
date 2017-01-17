@@ -16,7 +16,8 @@
 	
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
-- [Trainign Data for Mannequine Head](#training-data-for-manikin)
+- [Training Data for Mannequine Head](#training-data-for-manikin)
+- [Head Segmentation](#head-seg)
 - [FAQs](#faqs)
 - [Citation](#citation)
 
@@ -105,6 +106,10 @@ The training data I used in the paper is available on my [academic webpage](http
 
 This would run through all the training images, separate them into background, face and fake faces tensors, and it would do spatial contrastive normalization of the grayscale images in the YUV space
 
+#### Head Segmentation
+
+This node segments the face from the environment where the head is stationed. We use a plane segmentation algorithm to find the table in the scene, and find the clusters sitting on it.  From the convex hull computed from plane coefficients, we extrude the model and project the convex hull points inside.
+
 #### FAQs
 ##### I am having issues connecting to the sensor even though my code compiles
 
@@ -119,7 +124,7 @@ If you run into further issues, feel free to open an issues ticket or ping me [@
 
 ###Citation
 
-If you used `ensenso` in your work, please cite it.
+If you used `ensenso` in your work, I would be glad if you could cite it.
 
 ```tex
 @electronic{ensenso,
