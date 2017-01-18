@@ -24,8 +24,12 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 /*pcl segmentations*/
-#include <pcl/features/normal_3d.h>
+#include <pcl/features/crh.h>
+#include <pcl/features/vfh.h>
+#include <pcl/features/pfh.h>
 #include <boost/thread/thread.hpp>
+#include <pcl/features/our_cvfh.h>
+#include <pcl/features/normal_3d.h>
 
 #include <pcl/ModelCoefficients.h>
 #include <pcl/sample_consensus/method_types.h>

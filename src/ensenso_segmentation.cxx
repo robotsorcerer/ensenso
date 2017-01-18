@@ -1,5 +1,6 @@
 #include <mutex>
 #include <thread>
+#include <memory>
 #include <ros/spinner.h>
 
 #include <ensenso/visualizer.h>
@@ -12,13 +13,10 @@
 #include <pcl/segmentation/extract_polygonal_prism_data.h>
 
 /*Computer Descriptors*/
-#include <pcl/features/normal_3d.h>
 #include <pcl/common/centroid.h>
-#include <pcl/features/crh.h>
 
+#include <pcl/visualization/pcl_plotter.h>
 #include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/2d/morphology.h>
-#include <pcl/filters/morphological_filter.h>
 
 /*Globlal namespaces and aliases*/
 // using namespace pathfinder;
@@ -33,15 +31,32 @@ using PointCloudNPtr  	= PointCloudN::Ptr;
 using pcl_viz 			= pcl::visualization::PCLVisualizer;
 using NormalEstimation 	= pcl::NormalEstimation<PointT, PointN>;
 
-using CRH90 			= pcl::Histogram<90>;
-using PointCloudH 		= pcl::PointCloud<CRH90>;
-using PointCloudHPtr	= PointCloudH::Ptr;
+using CRH90 				= pcl::Histogram<90>;
+using PointCloudH 			= pcl::PointCloud<CRH90>;
+using PointCloudHPtr		= PointCloudH::Ptr;
+
+/*Descriptor aliases*/
+using PFH125 				= pcl::PFHSignature125;
+using PointCloudPFH125 		= pcl::PointCloud<PFH125>;
+using PointCloudPFH125Ptr 	= pcl::PointCloud<PFH125>::Ptr;
+
+/*Kd Trees*/
+using TreeKd = pcl::search::KdTree<PointT>;
+using TreeKdPtr = pcl::search::KdTree<PointT>::Ptr;
+
+using VFH308 = pcl::VFHSignature308;
+using PointCloudVFH308 = pcl::PointCloud<VFH308>;
+using PointCloudTVFH308Ptr = PointCloudVFH308::Ptr;
 
 #define OUT(__o__) std::cout<< __o__ << std::endl;
 
+
+class objectPoseEstim; //class forward declaration
+
 class Segmentation
 {
-private:
+private:	
+	friend class objectPoseEstim; //friend class forward declaration
 	bool updateCloud, save, running;
 	ros::NodeHandle nh_;
  	const std::string cloudName;
@@ -70,14 +85,13 @@ private:
 	pcl::PointIndices::Ptr inliers, faceIndices;
 	// Prism object.
 	pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
-	pcl::Morphology<PointT> morph;
 
 	/*Global descriptor objects*/
 	PointCloudNPtr normals;
 	PointCloudHPtr histogram;
  	NormalEstimation normalEstimation;
 public:
-	Segmentation(bool running_, ros::NodeHandle nh)
+	Segmentation(bool running_, ros::NodeHandle nh, objectPoseEstim* ope)
 	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
 	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2)
@@ -253,7 +267,7 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(mutex);	
 			//it is important to pass this->cloud by ref in order to see updates on screen
-			segCloud = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> >(&this->cloud);
+			segCloud = boost::shared_ptr<pcl::PointCloud<PointT> >(&this->cloud);
 			updateCloud = false;	
 		}
 		seg.setInputCloud (segCloud);
@@ -264,7 +278,7 @@ public:
 		else
 		{
 			// Copy the points of the plane to a new cloud.
-			pcl::ExtractIndices<pcl::PointXYZ> extract;
+			pcl::ExtractIndices<PointT> extract;
 			extract.setInputCloud(segCloud);
 			extract.setIndices(inliers);
 			extract.filter(*plane);
@@ -295,12 +309,6 @@ public:
 				// PointCloudT radius   
 				PointCloudTPtr passThruCloud  (new PointCloudT);
 				passThrough(*faces, passThruCloud);
-/*
-				//remove small bright artifacts from the image. 
-				//Large bright artifacts are undisturbed
-				float resolution = 5.0f;	//window size to be used for morph op
-				// pcl::MorphologicalOperators::MORPHpcl mo
-				morph.applyMorphologicalOperation(*passThruCloud);*/
 
 				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
@@ -341,35 +349,162 @@ public:
 				ROS_INFO("Chosen hull is not planar");
 		}
 	}
+};
+
+class objectPoseEstim{
+private:
+	std::mutex mutex_o;
+	PointCloudTPtr faces_o;
+	friend class Segmentation; //friend class forward declaration
+	std::shared_ptr<Segmentation> seg;
+
+public:
+	objectPoseEstim(Segmentation seg)
+	{
+		// seg = std::shared_ptr<Segmentation>(new Segmentation);
+	}
+
+	//copy constructor
+	objectPoseEstim(){}
+
+	//destructor
+	~objectPoseEstim()
+	{
+
+	}
+
+	void initPointers()
+	{		
+		faces_o = PointCloudTPtr(new PointCloudT);
+	}
+
+	void acquireFaceCluster()
+	{
+		// faces_o = seg.faces;
+	}
+
+	void computeNormals(const PointCloudTPtr cloud, const PointCloudNPtr cloud_normals, float radius=0.03)
+	{
+	  // Create the normal estimation class, and pass the input dataset to it
+	  NormalEstimation ne;
+	  ne.setInputCloud (cloud);
+
+	  // Create an empty kdtree representation, and pass it to the normal estimation object.
+	  // Its content will be filled inside the object, based on the given input dataset (as no other search surface is given).
+	  TreeKdPtr localTree (new TreeKd ());
+	  ne.setSearchMethod (localTree);
+
+	  // Use all neighbors in a sphere of radius 3cm
+	  ne.setRadiusSearch (radius);
+
+	  // Compute the features
+	  ne.compute (*cloud_normals);
+	  // cloud_normals->points.size () should have the same size as the input cloud->points.size ()*
+	}
+
+	void computeOURCVFH(const PointCloudTPtr cloud, const PointCloudTVFH308Ptr ourcvfh_desc, float angle=5.0,\
+						float threshold = 1.0, float axis_ratio = 0.8)
+	{
+		//get cloud normals
+		PointCloudNPtr normals (new PointCloudN);
+		computeNormals(cloud, normals);
+
+		//create a our_cvfh object
+		pcl::OURCVFHEstimation<PointT, PointN, VFH308> ourcvfh;
+		ourcvfh.setInputCloud(cloud);
+		ourcvfh.setInputNormals(normals);
+		//create an empty kdtree rep to be passed to the fpfh estimation object
+		TreeKdPtr tree (new TreeKd());
+		ourcvfh.setSearchMethod(tree);
+		ourcvfh.setEPSAngleThreshold(angle/180.0 * M_PI);
+		//normalize the bins of the resulting hostogram using total number of points
+		ourcvfh.setNormalizeBins(true);
+		//normalize the surface descriptors with max size between centroid and cluster points
+		ourcvfh.setCurvatureThreshold(threshold);
+		ourcvfh.setAxisRatio(axis_ratio);
+
+		ourcvfh.compute(*ourcvfh_desc);
+	}
+
+	void computeVFH(const PointCloudTPtr cloud, const PointCloudTVFH308Ptr vfh_desc)
+	{
+		//get cloud normals
+		PointCloudNPtr normals (new PointCloudN);
+		computeNormals(cloud, normals);
+
+		//create a vfh object
+		pcl::VFHEstimation<PointT, PointN, VFH308> vfh;
+		vfh.setInputCloud(cloud);
+		vfh.setInputNormals(normals);
+		//create an empty kdtree rep to be passed to the fpfh estimation object
+		TreeKdPtr tree (new TreeKd());
+		vfh.setSearchMethod(tree);
+		//normalize the bins of the resulting hostogram using total number of points
+		vfh.setNormalizeBins(true);
+		//normalize the surface descriptors with max size between centroid and cluster points
+		vfh.setNormalizeDistance(false);
+
+		vfh.compute(*vfh_desc);
+	}
+
+	void computePFH(const PointCloudTPtr cloud, const PointCloudPFH125Ptr pfh_desc, \
+					const float& tree_rad, const float& neigh_rad)
+	{
+		PointCloudNPtr normals(new PointCloudN);
+		NormalEstimation nest;
+		nest.setInputCloud(cloud);
+		nest.setRadiusSearch(tree_rad);
+
+		TreeKdPtr kdt (new TreeKd);
+
+		nest.setSearchMethod(kdt);
+		nest.compute(*normals);
+
+		pcl::PFHEstimation<PointT, PointN, PFH125> PFH;
+		//pfh processing
+		PFH.setInputCloud(cloud);
+		PFH.setInputNormals(normals);
+		PFH.setSearchMethod(kdt);
+
+		if(neigh_rad <= tree_rad)
+		{
+			std::cerr << "Neighborhood radius must be greater than the normals estimation radius" << std::endl;
+		}
+
+		PFH.setRadiusSearch(neigh_rad);
+
+		PFH.compute(*pfh_desc);
+	}
 
 	/*This is my vfh descriptor of the cluster I have identified in the scene*/
-	void cameraRollHistogram()
-	{	
-		PointCloudTPtr object;
-		{				
-			std::lock_guard<std::mutex> lock(mutex);
-			//retrieve the extracted face cluster from the cluttered image
-			object = PointCloudTPtr (new PointCloudT(*faces));
-			updateCloud = false;
-		}
-		normalEstimation.setInputCloud(object);
-		normalEstimation.setRadiusSearch(0.03);
-		pcl::search::KdTree<PointT>::Ptr kdtree (new pcl::search::KdTree<PointT>);
-		normalEstimation.setSearchMethod(kdtree);
-		normalEstimation.compute(*normals);
+	// void cameraRollHistogram()
+	// {	
+	// 	PointCloudTPtr object;
+	// 	{				
+	// 		std::lock_guard<std::mutex> lock(mutex);
+	// 		//retrieve the extracted face cluster from the cluttered image
+	// 		object = PointCloudTPtr (new PointCloudT(*faces));
+	// 		updateCloud = false;
+	// 	}
+	// 	normalEstimation.setInputCloud(object);
+	// 	normalEstimation.setRadiusSearch(0.03);
+	// 	TreeKdPtr kdtree (new TreeKd);
+	// 	normalEstimation.setSearchMethod(kdtree);
+	// 	normalEstimation.compute(*normals);
 
-		// CRH estimation object.
-		pcl::CRHEstimation<PointT, PointN, CRH90> crh;
-		crh.setInputCloud(object);
-		crh.setInputNormals(normals);
-		Eigen::Vector4f centroid;
-		pcl::compute3DCentroid(*object, centroid);
-		crh.setCentroid(centroid);
+	// 	// CRH estimation object.
+	// 	pcl::CRHEstimation<PointT, PointN, CRH90> crh;
+	// 	crh.setInputCloud(object);
+	// 	crh.setInputNormals(normals);
+	// 	Eigen::Vector4f centroid;
+	// 	pcl::compute3DCentroid(*object, centroid);
+	// 	crh.setCentroid(centroid);
 
-		// Compute the CRH.
-		crh.compute(*histogram);
-	}
+	// 	// Compute the CRH.
+	// 	crh.compute(*histogram);
+	// }
 };
+
 
 int main(int argc, char* argv[])
 {
@@ -378,8 +513,9 @@ int main(int argc, char* argv[])
 
 	bool running = true;
 	ros::NodeHandle nh;
+	objectPoseEstim* ope;
 
-	Segmentation seg(running, nh);
+	Segmentation seg(running, nh, ope);
 	seg.spawn();
 
 	ros::shutdown();
