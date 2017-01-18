@@ -17,6 +17,8 @@
 #include <pcl/features/crh.h>
 
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/2d/morphology.h>
+#include <pcl/filters/morphological_filter.h>
 
 /*Globlal namespaces and aliases*/
 // using namespace pathfinder;
@@ -68,6 +70,7 @@ private:
 	pcl::PointIndices::Ptr inliers, faceIndices;
 	// Prism object.
 	pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+	pcl::Morphology<PointT> morph;
 
 	/*Global descriptor objects*/
 	PointCloudNPtr normals;
@@ -76,7 +79,7 @@ private:
 public:
 	Segmentation(bool running_, ros::NodeHandle nh)
 	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
-	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.6953f),
+	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
 	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2)
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
@@ -157,7 +160,7 @@ public:
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
-		multiViewer->addText("Convex Hull", 10, 10, "v4 text", v4);
+		multiViewer->addText("Mean-k Filtered", 10, 10, "v4 text", v4);
 	}
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
@@ -186,7 +189,7 @@ public:
 
 		//filter points with particular z range
 		filter.setFilterFieldName("x");
-		filter.setFilterLimits(0.0, 1000);
+		filter.setFilterLimits(-10, 100);
 		filter.filter(*passThruCloud);
 	}
 
@@ -195,12 +198,13 @@ public:
 		pcl::StatisticalOutlierRemoval<PointT> filter;
 		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
 		filter.setInputCloud(temp_cloud);
+		// OUT("cloud points: " << temp_cloud->height * temp_cloud ->width);
 		//set numbers of neighbors to consider 50
-		filter.setMeanK(10);
+		filter.setMeanK(20);
 		/*set standard deviation to multiply with to 1
 		points with a distance larger than 1 std. dev of the mean outliers 
 		*/
-		filter.setStddevMulThresh(15.0);
+		filter.setStddevMulThresh(1.0);
 		filter.filter(*filteredCloud);
 	}
 
@@ -291,16 +295,22 @@ public:
 				// PointCloudT radius   
 				PointCloudTPtr passThruCloud  (new PointCloudT);
 				passThrough(*faces, passThruCloud);
+/*
+				//remove small bright artifacts from the image. 
+				//Large bright artifacts are undisturbed
+				float resolution = 5.0f;	//window size to be used for morph op
+				// pcl::MorphologicalOperators::MORPHpcl mo
+				morph.applyMorphologicalOperation(*passThruCloud);*/
 
 				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
 				multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
-				multiViewer->addPointCloud(filteredCloud, "Convex Hull", v4);
+				multiViewer->addPointCloud(filteredCloud, "Mean-k Filtered", v4);
 
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Convex Hull");
+				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Mean-k Filtered");
 
 				while (running && ros::ok())
 				{
@@ -321,7 +331,7 @@ public:
 					  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
 					  meanKFilter(*faces, filteredCloud);
-					  multiViewer->updatePointCloud(filteredCloud, "Convex Hull");
+					  multiViewer->updatePointCloud(filteredCloud, "Mean-k Filtered");
 					}	    
 					multiViewer->spinOnce(10);
 				}
@@ -332,13 +342,14 @@ public:
 		}
 	}
 
+	/*This is my vfh descriptor of the cluster I have identified in the scene*/
 	void cameraRollHistogram()
 	{	
 		PointCloudTPtr object;
 		{				
 			std::lock_guard<std::mutex> lock(mutex);
-			//it is important to pass this->cloud by ref in order to see updates on screen
-			object = PointCloudTPtr (new PointCloudT(this->cloud));
+			//retrieve the extracted face cluster from the cluttered image
+			object = PointCloudTPtr (new PointCloudT(*faces));
 			updateCloud = false;
 		}
 		normalEstimation.setInputCloud(object);
@@ -348,7 +359,7 @@ public:
 		normalEstimation.compute(*normals);
 
 		// CRH estimation object.
-		pcl::CRHEstimation<pcl::PointXYZ, pcl::Normal, CRH90> crh;
+		pcl::CRHEstimation<PointT, PointN, CRH90> crh;
 		crh.setInputCloud(object);
 		crh.setInputNormals(normals);
 		Eigen::Vector4f centroid;
