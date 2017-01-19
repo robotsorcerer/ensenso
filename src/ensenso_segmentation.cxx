@@ -91,7 +91,7 @@ private:
 	PointCloudHPtr histogram;
  	NormalEstimation normalEstimation;
 public:
-	Segmentation(bool running_, ros::NodeHandle nh, objectPoseEstim* ope)
+	Segmentation(bool running_, ros::NodeHandle nh)
 	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
 	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2)
@@ -349,23 +349,22 @@ public:
 				ROS_INFO("Chosen hull is not planar");
 		}
 	}
+
+	void getDescriptors();
 };
 
 class objectPoseEstim{
 private:
 	std::mutex mutex_o;
 	PointCloudTPtr faces_o;
-	friend class Segmentation; //friend class forward declaration
-	std::shared_ptr<Segmentation> seg;
+	int test;
 
 public:
-	objectPoseEstim(Segmentation seg)
+	objectPoseEstim()
+	:test(1)
 	{
-		// seg = std::shared_ptr<Segmentation>(new Segmentation);
-	}
 
-	//copy constructor
-	objectPoseEstim(){}
+	}
 
 	//destructor
 	~objectPoseEstim()
@@ -505,6 +504,19 @@ public:
 	// }
 };
 
+void Segmentation::getDescriptors()
+{	
+	objectPoseEstim obj;	
+	PointCloudTPtr cloud (new PointCloudT);
+	{		
+		std::lock_guard<std::mutex> lock(mutex);
+		cloud = this->cloud;
+	}
+	PointCloudTVFH308Ptr ourcvfh_desc (new pcl::PointCloud<pcl::VFHSignature308>);
+	float angle, threshold, axis_ratio;
+	angle = 5.0; threshold = 1.0; axis_ratio = 0.8;
+	obj.computeOURCVFH(cloud, ourcvfh_desc, angle, threshold, axis_ratio);
+}
 
 int main(int argc, char* argv[])
 {
@@ -513,9 +525,8 @@ int main(int argc, char* argv[])
 
 	bool running = true;
 	ros::NodeHandle nh;
-	objectPoseEstim* ope;
 
-	Segmentation seg(running, nh, ope);
+	Segmentation seg(running, nh);
 	seg.spawn();
 
 	ros::shutdown();
