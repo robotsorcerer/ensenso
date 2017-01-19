@@ -170,13 +170,12 @@ private:
     const std::string& train_clouds = std::get<4>(paths);
     const std::string& test_imgs = std::get<5>(paths);
     const std::string& test_clouds = std::get<6>(paths);
-    ROS_INFO_STREAM("train_imgs: "<< train_imgs << "\ttrain_clouds: " << train_clouds );
 
     oss.str("");
     oss << counter;
     const std::string baseName = oss.str();
-    const std::string cloud_id = "face_positive_" + baseName + "_cloud.pcd";// baseName + "_cloud.pcd";
-    const std::string imageName = "face_positive_" + baseName + "_image.png";//baseName + "_image.png";
+    const std::string cloud_id = "face_" + baseName + "_cloud.pcd";// baseName + "_cloud.pcd";
+    const std::string imageName = "face_" + baseName + "_image.png";//baseName + "_image.png";
 
     ROS_INFO_STREAM("saving cloud: " << cloudName);
     writer.writeBinary(cloud_id, cloud);
@@ -228,7 +227,7 @@ private:
   void cloudDisp()
   {
     // const PointCloudT cloud (new const PointCloudT);
-    const PointCloudT& cloud  = this->cloud;   
+    PointCloudT cloud  = this->cloud;   
     PointCloudT::ConstPtr cloud_ptr (&cloud);
 
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
