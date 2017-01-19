@@ -87,8 +87,9 @@ public:
   }
   //destructor
   ~Receiver()
-  { 
-
+  {     
+    viz.reset();
+    viewer.reset();
   }
 
   Receiver(Receiver const&) =delete;
@@ -190,7 +191,6 @@ private:
   {
     cv::Mat ir;  
     PointCloudT cloud; 
-
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(windowName, 640, 480) ;
 
@@ -221,19 +221,20 @@ private:
       }
     }
     cv::destroyAllWindows();
-    cv::waitKey(100);
+    cv::waitKey(100);    
   }
 
   void cloudDisp()
   {
-    // const PointCloudT cloud (new const PointCloudT);
-    PointCloudT cloud  = this->cloud;   
-    PointCloudT::ConstPtr cloud_ptr (&cloud);
-
-    pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);
-    cv::Mat ir = this->ir;    
     viz = boost::shared_ptr<visualizer> (new visualizer());
-    viewer= viz->createViewer();    
+    viewer = boost::shared_ptr<pcl_viz> (new pcl_viz);  
+    viewer= viz->createViewer(); 
+
+    // PointCloudT cloud  = this->cloud;   
+    PointCloudT::Ptr cloud_ptr (&this->cloud);    
+
+    pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 150, 155);
+    cv::Mat ir = this->ir;     
     viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
 
     for(; running && ros::ok() ;)
@@ -248,7 +249,7 @@ private:
       if(save)
       {            
         save = false;
-        saveCloudAndImage(cloud, ir);
+        saveCloudAndImage(*cloud_ptr, ir);
       }
       viewer->spinOnce(10);
     }
@@ -260,7 +261,7 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "ensensor_viewer_node"); 
 
-  ROS_INFO("Started node %s", ros::this_node::getName().c_str());
+  ROS_INFO_STREAM("Started node " << ros::this_node::getName().c_str());
 
   Receiver r;
   r.run();
