@@ -32,8 +32,8 @@ using pcl_viz 			= pcl::visualization::PCLVisualizer;
 using NormalEstimation 	= pcl::NormalEstimation<PointT, PointN>;
 
 using CRH90 				= pcl::Histogram<90>;
-using PointCloudH 			= pcl::PointCloud<CRH90>;
-using PointCloudHPtr		= PointCloudH::Ptr;
+using PointCloudCRH90		= pcl::PointCloud<CRH90>;
+using PointCloudCRH90Ptr	= PointCloudCRH90::Ptr;
 
 /*Descriptor aliases*/
 using PFH125 				= pcl::PFHSignature125;
@@ -74,8 +74,9 @@ private:
 	float zmin, zmax;	//minimum and maximum distance to extrude the prism object
 	int v1, v2, v3, v4;
  	ros::AsyncSpinner spinner;
- 	/*Filtered Cloud*/
- 	PointCloudTPtr filteredCloud;
+ 	/*Filtered Cloud and backgrounds*/
+ 	PointCloudTPtr filteredCloud, cloud_background;
+ 	mutable PointCloudTPtr pillows;
 
 	/*Plane Segmentation Objects*/
 	PointCloudTPtr segCloud, plane, convexHull, faces;
@@ -88,8 +89,12 @@ private:
 
 	/*Global descriptor objects*/
 	PointCloudNPtr normals;
-	PointCloudHPtr histogram;
  	NormalEstimation normalEstimation;
+
+	PointCloudTVFH308Ptr ourcvfh_desc;
+	PointCloudTVFH308Ptr vfh_desc;
+	PointCloudPFH125Ptr pfh_desc;
+	PointCloudCRH90Ptr crhHistogram;
 public:
 	Segmentation(bool running_, ros::NodeHandle nh)
 	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
@@ -112,19 +117,28 @@ public:
 	
 	void initPointers()
 	{
-		segCloud 	= pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-		plane 		= 	pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-		convexHull 	= pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-		faces 		= pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-		filteredCloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-		//Get Plane Model
-		coefficients = pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
-		inliers 	= pcl::PointIndices::Ptr  (new pcl::PointIndices);
-		//indices of segmented face
-		faceIndices = pcl::PointIndices::Ptr (new pcl::PointIndices);
-		normals 	= PointCloudNPtr (new PointCloudN);
-		histogram 	= PointCloudHPtr (new PointCloudH);
-		multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));  
+		//global clouds for class
+		segCloud 			= PointCloudTPtr (new PointCloudT);
+		plane 				= PointCloudTPtr (new PointCloudT);
+		convexHull 			= PointCloudTPtr (new PointCloudT);
+		faces 				= PointCloudTPtr (new PointCloudT);
+		filteredCloud 		= PointCloudTPtr (new PointCloudT);
+		cloud_background 	= PointCloudTPtr (new PointCloudT);
+		pillows				= PointCloudTPtr (new PointCloudT);
+
+		//Segmentation Models
+		coefficients 		= pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
+		inliers 			= pcl::PointIndices::Ptr  (new pcl::PointIndices);
+		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
+
+		normals 			= PointCloudNPtr (new PointCloudN);
+		multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));  
+
+		//descriptors
+		ourcvfh_desc 		= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
+		vfh_desc 			= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
+		pfh_desc 			= PointCloudPFH125Ptr(new PointCloudPFH125);
+		crhHistogram 		= PointCloudCRH90Ptr (new PointCloudCRH90);
 	}
 
 	void begin()
@@ -145,7 +159,6 @@ public:
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
 	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
-	    // threads.push_back(std::thread(&Segmentation::cameraRollHistogram, this));
 	    std::for_each(threads.begin(), threads.end(), \
 	                  std::mem_fn(&std::thread::join)); 
 	}
@@ -174,7 +187,7 @@ public:
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
-		multiViewer->addText("Mean-k Filtered", 10, 10, "v4 text", v4);
+		multiViewer->addText("background", 10, 10, "v4 text", v4);
 	}
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
@@ -203,7 +216,7 @@ public:
 
 		//filter points with particular z range
 		filter.setFilterFieldName("x");
-		filter.setFilterLimits(-10, 100);
+		filter.setFilterLimits(0, 1000);
 		filter.filter(*passThruCloud);
 	}
 
@@ -220,6 +233,64 @@ public:
 		*/
 		filter.setStddevMulThresh(1.0);
 		filter.filter(*filteredCloud);
+	}
+
+	void getBackGroundCluster() const
+	{
+		pcl::io::loadPCDFile<PointT>("clouds/background_cloud.pcd", *cloud_background);
+		//remove the table from the background so that what we are left with are the pillows
+		PointCloudTPtr table(new PointCloudT);
+		PointCloudTPtr convexHull(new PointCloudT);
+		PointCloudTPtr pillows(new PointCloudT);
+		// Get the plane model, if present.
+		pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+		pcl::SACSegmentation<pcl::PointXYZ> segmentation;
+		segmentation.setInputCloud(cloud_background);
+		segmentation.setModelType(pcl::SACMODEL_PLANE);
+		segmentation.setMethodType(pcl::SAC_RANSAC);
+		segmentation.setDistanceThreshold(distThreshold);
+		segmentation.setOptimizeCoefficients(true);
+		pcl::PointIndices::Ptr tableIndices(new pcl::PointIndices);
+		segmentation.segment(*tableIndices, *coefficients);
+
+		if (tableIndices->indices.size() == 0)
+			std::cout << "Could not find a plane in the scene." << std::endl;
+		else
+		{
+			// Copy the points of the plane to a new cloud.
+			pcl::ExtractIndices<pcl::PointXYZ> extract;
+			extract.setInputCloud(cloud_background);
+			extract.setIndices(tableIndices);
+			extract.filter(*table);
+
+			// Retrieve the convex hull.
+			pcl::ConvexHull<pcl::PointXYZ> hull;
+			hull.setInputCloud(table);
+			// Make sure that the resulting hull is bidimensional.
+			hull.setDimension(2);
+			hull.reconstruct(*convexHull);
+
+			// Redundant check.
+			if (hull.getDimension() == 2)
+			{
+				// Prism object.
+				pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+				prism.setInputCloud(cloud_background);
+				prism.setInputPlanarHull(convexHull);
+				// First parameter: minimum Z value. Set to 0, segments pillows lying on the plane (can be negative).
+				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the pillows you expect.
+				prism.setHeightLimits(zmin, zmin+0.2f);
+				pcl::PointIndices::Ptr backgroundIndices(new pcl::PointIndices);
+
+				prism.segment(*backgroundIndices);
+
+				// Get and show all points retrieved by the hull.
+				extract.setIndices(backgroundIndices);
+				extract.filter(*pillows);
+				this->pillows = pillows;
+			}
+			else std::cout << "The chosen hull is not planar." << std::endl;
+		}
 	}
 
 	void cloudDisp() 
@@ -313,12 +384,12 @@ public:
 				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
 				multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
-				multiViewer->addPointCloud(filteredCloud, "Mean-k Filtered", v4);
+				multiViewer->addPointCloud(this->pillows, "background", v4);
 
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
 				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Mean-k Filtered");
+				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "background");
 
 				while (running && ros::ok())
 				{
@@ -338,8 +409,8 @@ public:
 					  passThrough(*faces, passThruCloud);
 					  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
-					  meanKFilter(*faces, filteredCloud);
-					  multiViewer->updatePointCloud(filteredCloud, "Mean-k Filtered");
+					  // meanKFilter(*faces, filteredCloud);
+					  // multiViewer->updatePointCloud(filteredCloud, "Mean-k Filtered");
 					}	    
 					multiViewer->spinOnce(10);
 				}
@@ -357,11 +428,9 @@ class objectPoseEstim{
 private:
 	std::mutex mutex_o;
 	PointCloudTPtr faces_o;
-	int test;
 
 public:
 	objectPoseEstim()
-	:test(1)
 	{
 
 	}
@@ -375,11 +444,6 @@ public:
 	void initPointers()
 	{		
 		faces_o = PointCloudTPtr(new PointCloudT);
-	}
-
-	void acquireFaceCluster()
-	{
-		// faces_o = seg.faces;
 	}
 
 	void computeNormals(const PointCloudTPtr cloud, const PointCloudNPtr cloud_normals, float radius=0.03)
@@ -447,7 +511,7 @@ public:
 	}
 
 	void computePFH(const PointCloudTPtr cloud, const PointCloudPFH125Ptr pfh_desc, \
-					const float& tree_rad, const float& neigh_rad)
+					const float& tree_rad = 0.03, const float& neigh_rad = 0.05)
 	{
 		PointCloudNPtr normals(new PointCloudN);
 		NormalEstimation nest;
@@ -476,46 +540,60 @@ public:
 	}
 
 	/*This is my vfh descriptor of the cluster I have identified in the scene*/
-	// void cameraRollHistogram()
-	// {	
-	// 	PointCloudTPtr object;
-	// 	{				
-	// 		std::lock_guard<std::mutex> lock(mutex);
-	// 		//retrieve the extracted face cluster from the cluttered image
-	// 		object = PointCloudTPtr (new PointCloudT(*faces));
-	// 		updateCloud = false;
-	// 	}
-	// 	normalEstimation.setInputCloud(object);
-	// 	normalEstimation.setRadiusSearch(0.03);
-	// 	TreeKdPtr kdtree (new TreeKd);
-	// 	normalEstimation.setSearchMethod(kdtree);
-	// 	normalEstimation.compute(*normals);
+	void cameraRollHistogram(const PointCloudTPtr faces, const PointCloudCRH90Ptr histogram)
+	{	
+		//normals for crhobjects
+		PointCloudNPtr normals(new PointCloudN); 
 
-	// 	// CRH estimation object.
-	// 	pcl::CRHEstimation<PointT, PointN, CRH90> crh;
-	// 	crh.setInputCloud(object);
-	// 	crh.setInputNormals(normals);
-	// 	Eigen::Vector4f centroid;
-	// 	pcl::compute3DCentroid(*object, centroid);
-	// 	crh.setCentroid(centroid);
+		//read the snapshot of the object from Segmentation Class and
+		//compute its normals
+		computeNormals(faces, normals);
 
-	// 	// Compute the CRH.
-	// 	crh.compute(*histogram);
-	// }
+		// CRH estimation object.
+		pcl::CRHEstimation<PointT, PointN, CRH90> crh;
+		crh.setInputCloud(faces);
+		crh.setInputNormals(normals);
+		Eigen::Vector4f centroid;
+		pcl::compute3DCentroid(*faces, centroid);
+		crh.setCentroid(centroid);
+
+		// Compute the CRH.
+		crh.compute(*histogram);
+	}
 };
 
 void Segmentation::getDescriptors()
 {	
 	objectPoseEstim obj;	
+
+	float&& tree_rad = 0.03;
+	float&& neigh_rad = 0.05;
+
 	PointCloudTPtr cloud (new PointCloudT);
 	{		
 		std::lock_guard<std::mutex> lock(mutex);
-		cloud = this->cloud;
+		*cloud = this->cloud;
 	}
 	PointCloudTVFH308Ptr ourcvfh_desc (new pcl::PointCloud<pcl::VFHSignature308>);
 	float angle, threshold, axis_ratio;
 	angle = 5.0; threshold = 1.0; axis_ratio = 0.8;
 	obj.computeOURCVFH(cloud, ourcvfh_desc, angle, threshold, axis_ratio);
+	this->ourcvfh_desc = ourcvfh_desc;
+
+	//compute vfh descriptors
+	PointCloudTVFH308Ptr vfh_desc (new pcl::PointCloud<pcl::VFHSignature308>);
+	obj.computeVFH(cloud, vfh_desc);
+	this->vfh_desc = vfh_desc;
+
+	//get pfh
+	PointCloudPFH125Ptr pfh_desc(new PointCloudPFH125);
+	obj.computePFH(cloud, pfh_desc, tree_rad, neigh_rad);
+	this->pfh_desc = pfh_desc; 
+
+	//compute camera roll histogram along with scene descriptors
+	PointCloudCRH90Ptr crhHistogram (new PointCloudCRH90);
+	obj.cameraRollHistogram(cloud, crhHistogram);
+	this->crhHistogram = crhHistogram;
 }
 
 int main(int argc, char* argv[])
