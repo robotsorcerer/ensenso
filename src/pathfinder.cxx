@@ -11,9 +11,7 @@ See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-fi
 #include <boost/property_tree/json_parser.hpp>
 
 #include <ros/package.h>  /*roslib*/
-#ifndef __ENSENSO_HEADERS_H__
-#define __ENSENSO_HEADERS_H__
-#endif
+#include <ensenso/ensenso_headers.h>
 
 namespace pathfinder
 {
@@ -47,6 +45,42 @@ namespace pathfinder
 	    }
 	    return true;
 	}
+
+	bool cloudsAndImagesPath(boost::filesystem::path & imagesPath, boost::filesystem::path & cloudsPath, const std::string& pkgName)
+	{
+		boost::filesystem::path pkgPath;
+		getROSPackagePath(pkgName, pkgPath);
+		ROS_INFO("Ensenso Path %s", pkgPath.c_str());
+		cloudsPath = pkgPath / "clouds";
+		imagesPath = pkgPath / "images";
+		if(!imagesPath.empty() && !cloudsPath.empty())
+		{
+			ROS_INFO("images path: %s \n clouds path: %s", imagesPath.c_str(), cloudsPath.c_str());
+			return true;
+		}
+		else
+			ROS_INFO("paths %s, and %s not found", imagesPath.c_str(), cloudsPath.c_str());
+	}
+
+/*	void getClouds(boost::filesystem::path & path, std::vector<PointCloudTPtr>pclFiles)
+	{
+		for (boost::filesystem::directory_iterator it (path); it != boost::filesystem::directory_iterator (); ++it)
+		{
+		  if (boost::filesystem::is_directory (it->status ()))
+		  {
+		    std::stringstream ss;
+		    ss << it->path ();
+		    ROS_INFO ("Loading %s ", ss.str ().c_str ());
+			pcl::io::loadPCDFile<PointT>(cloudsPath.c_str() +  "/background_5_cloud.pcd", *cloud_background);
+		  }
+		  if (boost::filesystem::is_regular_file (it->status ()) && boost::filesystem::extension (it->path ()) == extension)
+		  {
+		    vfh_model m;
+		    if (loadHist (base_dir / it->path ().filename (), m))
+		      models.push_back (m);
+		  }
+		}
+	}*/
 
 	std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
 				const std::string&, const std::string&, const std::string&, \

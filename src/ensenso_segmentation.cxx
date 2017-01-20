@@ -5,21 +5,24 @@
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
+#include <ensenso/ensenso_headers.h>
 #include <sensor_msgs/PointCloud2.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/surface/convex_hull.h>
+#include <pcl/surface/concave_hull.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/segmentation/extract_polygonal_prism_data.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 /*Computer Descriptors*/
 #include <pcl/common/centroid.h>
 
-#include <pcl/visualization/pcl_plotter.h>
+#include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 
 /*Globlal namespaces and aliases*/
-// using namespace pathfinder;
 using PointT 			= pcl::PointXYZ;
 using PointCloudT 		= pcl::PointCloud<PointT>;
 using PointCloudTPtr 	= PointCloudT::Ptr;
@@ -65,7 +68,6 @@ private:
  	PointCloudT cloud;  
  	std::thread cloudDispThread, normalsDispThread;
  	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer, segViewer;
- 	boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer;
 
 	boost::shared_ptr<visualizer> viz;
 	std::vector<std::thread> threads;	
@@ -76,7 +78,8 @@ private:
  	ros::AsyncSpinner spinner;
  	/*Filtered Cloud and backgrounds*/
  	PointCloudTPtr filteredCloud, cloud_background;
- 	mutable PointCloudTPtr pillows;
+ 	mutable PointCloudTPtr pillows;   //cause we'll copy indices of pillows to this
+	boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer;
 
 	/*Plane Segmentation Objects*/
 	PointCloudTPtr segCloud, plane, convexHull, faces;
@@ -131,8 +134,8 @@ public:
 		inliers 			= pcl::PointIndices::Ptr  (new pcl::PointIndices);
 		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
 
-		normals 			= PointCloudNPtr (new PointCloudN);
-		multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));  
+		normals 			= PointCloudNPtr (new PointCloudN);	
+		multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 
 		//descriptors
 		ourcvfh_desc 		= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
@@ -169,7 +172,7 @@ public:
 	  running = false;
 	}
 
-	void getMultiViewer()
+	void getMultiViewer(/*boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer*/)
 	{		
 		multiViewer->initCameraParameters ();
 		//top-left
@@ -216,7 +219,7 @@ public:
 
 		//filter points with particular z range
 		filter.setFilterFieldName("x");
-		filter.setFilterLimits(0, 1000);
+		filter.setFilterLimits(-10, 10);
 		filter.filter(*passThruCloud);
 	}
 
@@ -234,13 +237,101 @@ public:
 		filter.setStddevMulThresh(1.0);
 		filter.filter(*filteredCloud);
 	}
+/*
+	void getBackGroundCluster() const
+	{	
+		pcl::PCDReader reader;
+		reader.read ("background_cloud.pcd", *cloud_background);
+
+		// Create the filtering object: downsample the dataset using a leaf size of 1cm
+		pcl::VoxelGrid<pcl::PointXYZ> vg;
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
+		vg.setInputCloud (cloud);
+		vg.setLeafSize (0.01f, 0.01f, 0.01f);
+		vg.filter (*cloud_filtered);
+
+		std::cout << "PointCloud after filtering has: " << cloud_filtered->points.size ()  << " data points." << std::endl; //*
+
+		// Create the segmentation object for the planar model and set all the parameters
+		pcl::SACSegmentation<pcl::PointXYZ> seg;
+		pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+		pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZ> ());
+		pcl::PCDWriter writer;
+		seg.setOptimizeCoefficients (true);
+		seg.setModelType (pcl::SACMODEL_PLANE);
+		seg.setMethodType (pcl::SAC_RANSAC);
+		seg.setMaxIterations (100);
+  		seg.setDistanceThreshold (distThreshold);
+
+  		int i=0, nr_points = (int) cloud_filtered->points.size ();
+  		while (cloud_filtered->points.size () > 0.3 * nr_points)
+  		{
+  		  // Segment the largest planar component from the remaining cloud
+  		  seg.setInputCloud (cloud_filtered);
+  		  seg.segment (*inliers, *coefficients);
+  		  if (inliers->indices.size () == 0)
+  		  {
+  		    std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
+  		    break;
+  		  }
+
+  		  // Extract the planar inliers from the input cloud
+  		  pcl::ExtractIndices<pcl::PointXYZ> extract;
+  		  extract.setInputCloud (cloud_filtered);
+  		  extract.setIndices (inliers);
+  		  extract.setNegative (false);
+
+  		  // Get the points associated with the planar surface
+  		  extract.filter (*cloud_plane);
+  		  std::cout << "PointCloud representing the planar component: " << cloud_plane->points.size () << " data points." << std::endl;
+
+  		  // Remove the planar inliers, extract the rest
+  		  extract.setNegative (true);
+  		  extract.filter (*cloud_f);
+  		  *cloud_filtered = *cloud_f;
+  		}
+
+  		// Creating the KdTree object for the search method of the extraction
+  		pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+  		tree->setInputCloud (cloud_filtered);
+
+  		std::vector<pcl::PointIndices> cluster_indices;
+  		pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+  		ec.setClusterTolerance (0.02); // 2cm
+  		ec.setMinClusterSize (100);
+  		ec.setMaxClusterSize (25000);
+  		ec.setSearchMethod (tree);
+  		ec.setInputCloud (cloud_filtered);
+  		ec.extract (cluster_indices);
+
+  		int j = 0;
+  		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
+  		{
+  		  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+  		  for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
+  		    cloud_cluster->points.push_back (cloud_filtered->points[*pit]); //*
+  		  cloud_cluster->width = cloud_cluster->points.size ();
+  		  cloud_cluster->height = 1;
+  		  cloud_cluster->is_dense = true;
+
+  		  std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
+  		  std::stringstream ss;
+  		  ss << "cloud_cluster_" << j << ".pcd";
+  		  writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
+  		  j++;
+  		}
+	}*/
 
 	void getBackGroundCluster() const
-	{
-		pcl::io::loadPCDFile<PointT>("clouds/background_cloud.pcd", *cloud_background);
+	{	
+		boost::filesystem::path imagesPath, cloudsPath;
+		pathfinder::cloudsAndImagesPath(imagesPath, cloudsPath);
+
+		pcl::io::loadPCDFile<PointT>("background_cloud.pcd", *cloud_background);
 		//remove the table from the background so that what we are left with are the pillows
 		PointCloudTPtr table(new PointCloudT);
-		PointCloudTPtr convexHull(new PointCloudT);
+		PointCloudTPtr concaveHull(new PointCloudT);
 		PointCloudTPtr pillows(new PointCloudT);
 		// Get the plane model, if present.
 		pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -248,7 +339,7 @@ public:
 		segmentation.setInputCloud(cloud_background);
 		segmentation.setModelType(pcl::SACMODEL_PLANE);
 		segmentation.setMethodType(pcl::SAC_RANSAC);
-		segmentation.setDistanceThreshold(distThreshold);
+		segmentation.setDistanceThreshold(0.7874);   //height of table from cam center
 		segmentation.setOptimizeCoefficients(true);
 		pcl::PointIndices::Ptr tableIndices(new pcl::PointIndices);
 		segmentation.segment(*tableIndices, *coefficients);
@@ -266,31 +357,45 @@ public:
 			// Retrieve the convex hull.
 			pcl::ConvexHull<pcl::PointXYZ> hull;
 			hull.setInputCloud(table);
-			// Make sure that the resulting hull is bidimensional.
-			hull.setDimension(2);
-			hull.reconstruct(*convexHull);
+			hull.reconstruct(*concaveHull);
+			// Set the alpha value, which limits the size of the resultant
+			// hull segments (the smaller the more detailed the hull)
+			// hull.setAlpha (0.5);
 
-			// Redundant check.
-			if (hull.getDimension() == 2)
-			{
-				// Prism object.
-				pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
-				prism.setInputCloud(cloud_background);
-				prism.setInputPlanarHull(convexHull);
-				// First parameter: minimum Z value. Set to 0, segments pillows lying on the plane (can be negative).
-				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the pillows you expect.
-				prism.setHeightLimits(zmin, zmin+0.2f);
-				pcl::PointIndices::Ptr backgroundIndices(new pcl::PointIndices);
+			// Prism object.
+			pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+			prism.setInputCloud(cloud_background);
+			prism.setInputPlanarHull(concaveHull);
+			// First parameter: minimum Z value. Set to 0, segments pillows lying on the plane (can be negative).
+			// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the pillows you expect.
+			prism.setHeightLimits(0, 0.1016f);
+			pcl::PointIndices::Ptr backgroundIndices(new pcl::PointIndices);
 
-				prism.segment(*backgroundIndices);
+			prism.segment(*backgroundIndices);
 
-				// Get and show all points retrieved by the hull.
-				extract.setIndices(backgroundIndices);
-				extract.filter(*pillows);
-				this->pillows = pillows;
-			}
-			else std::cout << "The chosen hull is not planar." << std::endl;
+			// Get and show all points retrieved by the hull.
+			extract.setIndices(backgroundIndices);
+			extract.filter(*pillows);
+			this->pillows = pillows;
 		}
+	}
+
+	Eigen::Vector4d getBackGroundCentroid() const
+	{
+		//get the centroids of the resulting clusters
+		PointCloudTPtr pillows (new PointCloudT);
+		getBackGroundCluster();
+		pillows = this->pillows;
+
+		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
+		Eigen::Vector4d centroid, projCentroid;
+		compute3DCentroid (*pillows, centroid);
+
+		/*now we project the centroid of the base bladder by a couple of centimeters above the head.
+		this gives us a normal of the centroid*/
+		projCentroid << centroid(0), centroid(1), centroid(2) + 0.8, centroid(3);
+
+		return projCentroid;
 	}
 
 	void cloudDisp() 
@@ -323,8 +428,9 @@ public:
 
 	void planeSeg()
 	{	/*Generic initializations*/
-		//viewer for segmentation and stuff 
-		getMultiViewer();
+		//viewer for segmentation and stuff 		
+		// boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
+		getMultiViewer(/*multiViewer*/);
 		// Create the segmentation object
 		pcl::SACSegmentation<PointT> seg;
 		// Optional
@@ -334,6 +440,7 @@ public:
 		seg.setModelType (pcl::SACMODEL_PLANE); 
 		seg.setMethodType (pcl::SAC_RANSAC);
 		/*set the distance to the model threshold to use*/
+		getBackGroundCentroid();  //retrieve pillows
 		seg.setDistanceThreshold (distThreshold);	//as measured
 		{
 			std::lock_guard<std::mutex> lock(mutex);	
@@ -352,6 +459,7 @@ public:
 			pcl::ExtractIndices<PointT> extract;
 			extract.setInputCloud(segCloud);
 			extract.setIndices(inliers);
+			// Get the points associated with the planar surface
 			extract.filter(*plane);
 			//retrieve convex hull
 			pcl::ConvexHull<PointT> hull;
@@ -375,6 +483,58 @@ public:
 				extract.setIndices(faceIndices);
 				extract.filter(*faces);
 
+/*
+
+				ROS_INFO_STREAM("Faces before voxel filtering has: " << faces->points.size () << " points.");
+
+				//Now there is a tiny blob adjacent the face. we use euclidean extraction to cut it off
+				//we first downsample the cloud
+				// Create the filtering object: downsample the dataset using a leaf size of 1cm
+				pcl::VoxelGrid<PointT> vg;
+				PointCloudTPtr filteredFaces (new PointCloudT);
+				vg.setInputCloud (faces);
+				vg.setLeafSize (0.01f, 0.01f, 0.01f);
+				vg.filter (*filteredFaces);
+
+				ROS_INFO_STREAM("Faces after voxel filtering has: " << filteredFaces->points.size ()  << " points."); //*
+
+
+				// Creating the KdTree object for the search method of the extraction
+				pcl::search::KdTree<PointT>::Ptr tree (new pcl::search::KdTree<PointT>);
+				tree->setInputCloud (filteredFaces);
+
+				std::vector<pcl::PointIndices> cluster_indices;
+				pcl::EuclideanClusterExtraction<PointT> ec;
+				ec.setClusterTolerance (0.02); // 2cm
+				ec.setMinClusterSize (100);
+				ec.setMaxClusterSize (25000);
+				ec.setSearchMethod (tree);
+				ec.setInputCloud (faces);
+				ec.extract (cluster_indices);
+
+				std::vector<PointCloudTPtr> clustersVec;
+
+				int max = 0; 
+				int maxCluster(0);  //the maximum cluster needs be saved
+				pcl::PointCloud<pcl::PointXYZ>::Ptr biggestClusterCloud (new pcl::PointCloud<pcl::PointXYZ>);
+				for (auto it = cluster_indices.cbegin (); it != cluster_indices.cend (); ++it)
+				{
+				  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+				  for (auto pit = it->indices.cbegin (); pit != it->indices.cend (); ++pit)
+				    cloud_cluster->points.push_back (filteredFaces->points[*pit]); //*
+				  cloud_cluster->width = cloud_cluster->points.size ();
+				  cloud_cluster->height = 1;
+				  cloud_cluster->is_dense = true;
+
+				  ROS_INFO("Cluster: %d has %lu points", it , cloud_cluster->points.size ());
+				  if (maxCluster < cloud_cluster->points.size ())
+				  {
+				  	maxCluster = cloud_cluster->points.size();
+				  }
+
+				  clustersVec.push_back(cloud_cluster);
+				}
+*/
 				//filter segmented faces
 				meanKFilter(*faces, filteredCloud);
 				// PointCloudT radius   
@@ -410,7 +570,7 @@ public:
 					  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
 					  // meanKFilter(*faces, filteredCloud);
-					  // multiViewer->updatePointCloud(filteredCloud, "Mean-k Filtered");
+					  multiViewer->updatePointCloud(this->pillows, "background");
 					}	    
 					multiViewer->spinOnce(10);
 				}

@@ -78,7 +78,10 @@ if(ENSENSO_FOUND)
 
   set(viewer_files src/ensenso_viewer.cxx 
                    src/factory_functions.cxx
-                    src/pathfinder.cxx)    
+                    src/pathfinder.cxx)  
+
+  set(seg_files src/ensenso_segmentation.cxx
+                src/pathfinder.cxx )                      
 
   #add correspondence grouping library
   # add_library(ensenso_grouping src/ensenso_correspondence.cxx)
@@ -86,7 +89,7 @@ if(ENSENSO_FOUND)
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
   add_executable(ensenso_viewer ${viewer_files})
-  add_executable(ensenso_seg     src/ensenso_segmentation.cxx)
+  add_executable(ensenso_seg    ${seg_files})
 
   ## Specify libraries to link a library or executable target against
   target_link_libraries(ensenso_bridge
