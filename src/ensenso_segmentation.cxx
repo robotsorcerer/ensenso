@@ -241,22 +241,6 @@ public:
 		filter.filter(*passThruCloud);
 	}
 
-	void meanKFilter(const PointCloudT& cloud, PointCloudTPtr filteredCloud) const
-	{
-		pcl::StatisticalOutlierRemoval<PointT> filter;
-		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
-		filter.setInputCloud(temp_cloud);
-		// OUT("cloud points: " << temp_cloud->height * temp_cloud ->width);
-		//set numbers of neighbors to consider 50
-		filter.setMeanK(20);
-		/*set standard deviation to multiply with to 1
-		points with a distance larger than 1 std. dev of the mean outliers 
-		*/
-		filter.setStddevMulThresh(1.0);
-		filter.filter(*filteredCloud);
-	}
-
-
 	void getBackGroundCluster() const
 	{	
 		// boost::filesystem::path imagesPath, cloudsPath;
@@ -334,12 +318,6 @@ public:
 	    midface.close();
 	}
 
-	void rotate2XZ(Eigen::Vector3d& vec, Eigen::Matrix4d& rotatedVec)
-	{
-		/*Rotates a vector about the z-axis to the xz plane*/
-
-	}
-
 	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
 	{
 		//first compute the centroid of the retrieved cluster
@@ -362,13 +340,6 @@ public:
 		    ROS_INFO("HeadHeight [x: %f, y: %f, z: %f ]", headHeight(0), headHeight(1), headHeight(2) );
 		    ROS_INFO("HeadCentroids [x: %f, y: %f, z: %f ]", headCentroid(0), headCentroid(1), headCentroid(2) );
 	    }
-
-		//let's project the centroid by 1.0m along the +z axis to create a line
-		Eigen::Affine3f transform = Eigen::Affine3f::Identity();
-		transform.translation() << bgdCentroid(0), bgdCentroid(1), bgdCentroid(2) + 1.0f;
-		//rotate by theta about the +z axis
-		float theta = M_PI/2;
-		transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitZ()));
 
 		/*
 		Parametrize a line defined by an origin point o and a unit direction vector d
