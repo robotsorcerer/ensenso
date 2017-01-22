@@ -1,12 +1,15 @@
 #include <mutex>
+#include <cmath>
 #include <thread>
 #include <memory>
+#include <fstream>
 #include <ros/spinner.h>
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
 #include <ensenso/ensenso_headers.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <ensenso/HeadPose.h> //local msg communicator of 5-d pose
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/surface/convex_hull.h>
@@ -18,6 +21,7 @@
 
 /*Computer Descriptors*/
 #include <pcl/common/centroid.h>
+#include <pcl/console/parse.h>
 
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/statistical_outlier_removal.h>
@@ -60,7 +64,7 @@ class Segmentation
 {
 private:	
 	friend class objectPoseEstim; //friend class forward declaration
-	bool updateCloud, save, running;
+	bool updateCloud, save, running, print;
 	ros::NodeHandle nh_;
  	const std::string cloudName;
 	ros::Subscriber cloud_sub_;
@@ -98,11 +102,24 @@ private:
 	PointCloudTVFH308Ptr vfh_desc;
 	PointCloudPFH125Ptr pfh_desc;
 	PointCloudCRH90Ptr crhHistogram;
+
+	Eigen::Vector4d headHeaight;
+	Eigen::Vector3d headOrientation;
+	ensenso::HeadPose headPose;
+
+	double x, y, z, \
+	x_sq, y_sq, z_sq;  //used to compute spherical coordinates
+	
+	
+	double rad_dist, azimuth, polar; //spherical coords
+
+	ros::Publisher posePublisher;
+	uint64_t counter;
 public:
-	Segmentation(bool running_, ros::NodeHandle nh)
-	: nh_(nh), updateCloud(false), save(false), running(running_), cloudName("Segmentation Cloud"),
+	Segmentation(bool running_, ros::NodeHandle nh, bool print)
+	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), cloudName("Segmentation Cloud"),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
-	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2)
+	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0)
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
 	}
@@ -135,7 +152,7 @@ public:
 		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
 
 		normals 			= PointCloudNPtr (new PointCloudN);	
-		multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
+		// multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 
 		//descriptors
 		ourcvfh_desc 		= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
@@ -173,7 +190,8 @@ public:
 	}
 
 	void getMultiViewer(/*boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer*/)
-	{		
+	{				
+		multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 		multiViewer->initCameraParameters ();
 		//top-left
 		multiViewer->createViewPort(0.0, 0.5, 0.5, 1.0, v1);
@@ -237,96 +255,12 @@ public:
 		filter.setStddevMulThresh(1.0);
 		filter.filter(*filteredCloud);
 	}
-/*
-	void getBackGroundCluster() const
-	{	
-		pcl::PCDReader reader;
-		reader.read ("background_cloud.pcd", *cloud_background);
 
-		// Create the filtering object: downsample the dataset using a leaf size of 1cm
-		pcl::VoxelGrid<pcl::PointXYZ> vg;
-		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
-		vg.setInputCloud (cloud);
-		vg.setLeafSize (0.01f, 0.01f, 0.01f);
-		vg.filter (*cloud_filtered);
-
-		std::cout << "PointCloud after filtering has: " << cloud_filtered->points.size ()  << " data points." << std::endl; //*
-
-		// Create the segmentation object for the planar model and set all the parameters
-		pcl::SACSegmentation<pcl::PointXYZ> seg;
-		pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-		pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
-		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZ> ());
-		pcl::PCDWriter writer;
-		seg.setOptimizeCoefficients (true);
-		seg.setModelType (pcl::SACMODEL_PLANE);
-		seg.setMethodType (pcl::SAC_RANSAC);
-		seg.setMaxIterations (100);
-  		seg.setDistanceThreshold (distThreshold);
-
-  		int i=0, nr_points = (int) cloud_filtered->points.size ();
-  		while (cloud_filtered->points.size () > 0.3 * nr_points)
-  		{
-  		  // Segment the largest planar component from the remaining cloud
-  		  seg.setInputCloud (cloud_filtered);
-  		  seg.segment (*inliers, *coefficients);
-  		  if (inliers->indices.size () == 0)
-  		  {
-  		    std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
-  		    break;
-  		  }
-
-  		  // Extract the planar inliers from the input cloud
-  		  pcl::ExtractIndices<pcl::PointXYZ> extract;
-  		  extract.setInputCloud (cloud_filtered);
-  		  extract.setIndices (inliers);
-  		  extract.setNegative (false);
-
-  		  // Get the points associated with the planar surface
-  		  extract.filter (*cloud_plane);
-  		  std::cout << "PointCloud representing the planar component: " << cloud_plane->points.size () << " data points." << std::endl;
-
-  		  // Remove the planar inliers, extract the rest
-  		  extract.setNegative (true);
-  		  extract.filter (*cloud_f);
-  		  *cloud_filtered = *cloud_f;
-  		}
-
-  		// Creating the KdTree object for the search method of the extraction
-  		pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
-  		tree->setInputCloud (cloud_filtered);
-
-  		std::vector<pcl::PointIndices> cluster_indices;
-  		pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-  		ec.setClusterTolerance (0.02); // 2cm
-  		ec.setMinClusterSize (100);
-  		ec.setMaxClusterSize (25000);
-  		ec.setSearchMethod (tree);
-  		ec.setInputCloud (cloud_filtered);
-  		ec.extract (cluster_indices);
-
-  		int j = 0;
-  		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
-  		{
-  		  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
-  		  for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
-  		    cloud_cluster->points.push_back (cloud_filtered->points[*pit]); //*
-  		  cloud_cluster->width = cloud_cluster->points.size ();
-  		  cloud_cluster->height = 1;
-  		  cloud_cluster->is_dense = true;
-
-  		  std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
-  		  std::stringstream ss;
-  		  ss << "cloud_cluster_" << j << ".pcd";
-  		  writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
-  		  j++;
-  		}
-	}*/
 
 	void getBackGroundCluster() const
 	{	
-		boost::filesystem::path imagesPath, cloudsPath;
-		pathfinder::cloudsAndImagesPath(imagesPath, cloudsPath);
+		// boost::filesystem::path imagesPath, cloudsPath;
+		// pathfinder::cloudsAndImagesPath(imagesPath, cloudsPath);
 
 		pcl::io::loadPCDFile<PointT>("background_cloud.pcd", *cloud_background);
 		//remove the table from the background so that what we are left with are the pillows
@@ -358,9 +292,6 @@ public:
 			pcl::ConvexHull<pcl::PointXYZ> hull;
 			hull.setInputCloud(table);
 			hull.reconstruct(*concaveHull);
-			// Set the alpha value, which limits the size of the resultant
-			// hull segments (the smaller the more detailed the hull)
-			// hull.setAlpha (0.5);
 
 			// Prism object.
 			pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
@@ -388,22 +319,118 @@ public:
 		pillows = this->pillows;
 
 		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
-		Eigen::Vector4d centroid, projCentroid;
+		Eigen::Vector4d centroid;
 		compute3DCentroid (*pillows, centroid);
 
-		/*now we project the centroid of the base bladder by a couple of centimeters above the head.
-		this gives us a normal of the centroid*/
-		projCentroid << centroid(0), centroid(1), centroid(2) + 0.8, centroid(3);
+		return centroid;
+	}
 
-		return projCentroid;
+	void savepoints(Eigen::Vector4d &centroid)
+	{
+	    //Now we write the points to a text file for visualization processing
+	    std::ofstream midface("pose.csv", std::ios_base::app | std::ios_base::out);
+	    midface << centroid(0) <<"\t" <<centroid(1)<< "\t" << centroid(2) << "\n";
+	    ROS_INFO("Writing %f, %f, %f to pose.csv", centroid(0), centroid(12), centroid(2));
+	    midface.close();
+	}
+
+	void rotate2XZ(Eigen::Vector3d& vec, Eigen::Matrix4d& rotatedVec)
+	{
+		/*Rotates a vector about the z-axis to the xz plane*/
+
+	}
+
+	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
+	{
+		//first compute the centroid of the retrieved cluster
+		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
+		Eigen::Vector4d headCentroid, headHeight, bgdCentroid;
+		compute3DCentroid (*headNow, headCentroid);
+		//now subtract the height of camera above table from computed centroid
+		bgdCentroid = getBackGroundCentroid();
+		headHeight = headCentroid - bgdCentroid;
+		headHeight(3) = 1;  		//to allow for rotation
+
+		if(save)
+			savepoints(headCentroid);
+
+		//compute the orientation of the segmented cluster about the background
+		Eigen::Vector3d headAngle;
+
+	    if(print)
+	    {
+		    ROS_INFO("HeadHeight [x: %f, y: %f, z: %f ]", headHeight(0), headHeight(1), headHeight(2) );
+		    ROS_INFO("HeadCentroids [x: %f, y: %f, z: %f ]", headCentroid(0), headCentroid(1), headCentroid(2) );
+	    }
+
+		//let's project the centroid by 1.0m along the +z axis to create a line
+		Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+		transform.translation() << bgdCentroid(0), bgdCentroid(1), bgdCentroid(2) + 1.0f;
+		//rotate by theta about the +z axis
+		float theta = M_PI/2;
+		transform.rotate(Eigen::AngleAxisf(theta, Eigen::Vector3f::UnitZ()));
+
+		/*
+		Parametrize a line defined by an origin point o and a unit direction vector d
+		$ such that the line corresponds to the set $ l(t) = o + t * d, $ t \in \mathbf{R} $.
+		*/		
+		Eigen::Vector3d back, projback;
+		// Eigen::ParametrizedLine<double,4> centralLine;
+		back 		<< bgdCentroid(0), bgdCentroid(1), bgdCentroid(2);
+		projback  	= back;
+		projback(2) += 1;
+		Eigen::ParametrizedLine<double,3> centralLine = Eigen::ParametrizedLine<double,\
+														3>::Through(back, projback);
+		/*Compute the projection of the head centroid onto the line*/
+		auto faceCenter = headHeight.block<3,1>(0,0);
+		auto projectedFace = centralLine.projection(faceCenter);	
+		if(print){			
+			ROS_INFO_STREAM("projected line: \n" << projectedFace);	
+			ROS_INFO_STREAM("head center: \n" << faceCenter);	
+			// ROS_INFO_STREAM("parametereized line: " << centralLine);	
+		}											
+		/*
+ 		compute the spherical coordinates of the face cluster with origin as the background cluster of the base pillow
+ 		I use the ISO convention with my azimuth being the signed angle measured from azimuth reference direction to the orthogonal projection of 
+ 		line segment OP on the reference plane 
+		*/
+ 		// r = sqrt(x^2 + y^2 + z^2)
+ 		x    = faceCenter(0) - projectedFace(0);
+ 		y 	 = faceCenter(1) - projectedFace(1);
+ 		z 	 = faceCenter(2) - projectedFace(2);
+
+ 		x_sq = std::pow(x, 2);
+ 		y_sq = std::pow(y, 2);
+ 		z_sq = std::pow(z, 2);
+
+ 		//azimuth = yaw rotation about z axis in the counterclockwise direction
+ 		//polar   = pitch rotation about reference plane in the counterclockwise direction
+ 		//note that yaw rotation has a secondary effect on roll, the bank angle
+		rad_dist = std::sqrt(x_sq + y_sq + z_sq);
+		azimuth  = std::acos(z/rad_dist);
+		polar    = std::atan(y/x);
+
+		ensenso::HeadPose pose;
+		pose.stamp = ros::Time::now();
+		pose.seq   = ++counter;
+		pose.x = headHeight(0);
+		pose.y = headHeight(1);
+		pose.z = headHeight(2);
+		pose.pitch = polar;
+		pose.yaw = azimuth;
+
+		posePublisher = nh_.advertise<ensenso::HeadPose>("/mannequine_head/pose", 1000);
+		posePublisher.publish(pose);
+
+		return pose;
 	}
 
 	void cloudDisp() 
 	{
 	  const PointCloudT& cloud  = this->cloud;    
-	  PointCloudT::ConstPtr cloud_ptr (&cloud);	  
-	  /*we must */
+	  PointCloudT::ConstPtr cloud_ptr;	  
 	  // PointCloudT::ConstPtr cloud_ptr(new PointCloudT::ConstPtr);
+	  // *cloud_ptr = this->cloud;
 	  cloud_ptr = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> >(&this->cloud);
 	  
 	  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);	
@@ -483,63 +510,11 @@ public:
 				extract.setIndices(faceIndices);
 				extract.filter(*faces);
 
-/*
-
-				ROS_INFO_STREAM("Faces before voxel filtering has: " << faces->points.size () << " points.");
-
-				//Now there is a tiny blob adjacent the face. we use euclidean extraction to cut it off
-				//we first downsample the cloud
-				// Create the filtering object: downsample the dataset using a leaf size of 1cm
-				pcl::VoxelGrid<PointT> vg;
-				PointCloudTPtr filteredFaces (new PointCloudT);
-				vg.setInputCloud (faces);
-				vg.setLeafSize (0.01f, 0.01f, 0.01f);
-				vg.filter (*filteredFaces);
-
-				ROS_INFO_STREAM("Faces after voxel filtering has: " << filteredFaces->points.size ()  << " points."); //*
-
-
-				// Creating the KdTree object for the search method of the extraction
-				pcl::search::KdTree<PointT>::Ptr tree (new pcl::search::KdTree<PointT>);
-				tree->setInputCloud (filteredFaces);
-
-				std::vector<pcl::PointIndices> cluster_indices;
-				pcl::EuclideanClusterExtraction<PointT> ec;
-				ec.setClusterTolerance (0.02); // 2cm
-				ec.setMinClusterSize (100);
-				ec.setMaxClusterSize (25000);
-				ec.setSearchMethod (tree);
-				ec.setInputCloud (faces);
-				ec.extract (cluster_indices);
-
-				std::vector<PointCloudTPtr> clustersVec;
-
-				int max = 0; 
-				int maxCluster(0);  //the maximum cluster needs be saved
-				pcl::PointCloud<pcl::PointXYZ>::Ptr biggestClusterCloud (new pcl::PointCloud<pcl::PointXYZ>);
-				for (auto it = cluster_indices.cbegin (); it != cluster_indices.cend (); ++it)
-				{
-				  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
-				  for (auto pit = it->indices.cbegin (); pit != it->indices.cend (); ++pit)
-				    cloud_cluster->points.push_back (filteredFaces->points[*pit]); //*
-				  cloud_cluster->width = cloud_cluster->points.size ();
-				  cloud_cluster->height = 1;
-				  cloud_cluster->is_dense = true;
-
-				  ROS_INFO("Cluster: %d has %lu points", it , cloud_cluster->points.size ());
-				  if (maxCluster < cloud_cluster->points.size ())
-				  {
-				  	maxCluster = cloud_cluster->points.size();
-				  }
-
-				  clustersVec.push_back(cloud_cluster);
-				}
-*/
-				//filter segmented faces
-				meanKFilter(*faces, filteredCloud);
 				// PointCloudT radius   
 				PointCloudTPtr passThruCloud  (new PointCloudT);
 				passThrough(*faces, passThruCloud);
+
+				headPose = getHeadPose(faces);
 
 				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
@@ -569,8 +544,9 @@ public:
 					  passThrough(*faces, passThruCloud);
 					  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
-					  // meanKFilter(*faces, filteredCloud);
 					  multiViewer->updatePointCloud(this->pillows, "background");
+
+					  headPose = getHeadPose(faces);
 					}	    
 					multiViewer->spinOnce(10);
 				}
@@ -588,7 +564,6 @@ class objectPoseEstim{
 private:
 	std::mutex mutex_o;
 	PointCloudTPtr faces_o;
-
 public:
 	objectPoseEstim()
 	{
@@ -761,10 +736,18 @@ int main(int argc, char* argv[])
 	ros::init(argc, argv, "ensensor_segmentation_node"); 
 	ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
-	bool running = true;
+	bool running, print;
+	print = false;
+	running = true;
+
+	if (pcl::console::find_argument (argc, argv, "-p") >= 0)
+	{
+	  print = true;
+	}
+
 	ros::NodeHandle nh;
 
-	Segmentation seg(running, nh);
+	Segmentation seg(running, nh, print);
 	seg.spawn();
 
 	ros::shutdown();

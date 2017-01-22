@@ -38,6 +38,8 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
   roslib
+  std_msgs
+  message_generation
 )
 
 find_package(Ensenso)
@@ -45,9 +47,19 @@ find_package(Boost COMPONENTS filesystem system REQUIRED)
 find_package(MySQL REQUIRED)
 find_package(OpenCV REQUIRED)
 
+add_message_files(
+FILES
+HeadPose.msg
+)
+
+generate_messages(
+DEPENDENCIES
+std_msgs
+)
+
 catkin_package(
   INCLUDE_DIRS include
-   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
+   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs
 )
 
 ###########
