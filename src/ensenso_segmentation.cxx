@@ -16,8 +16,6 @@
 #include <pcl/surface/concave_hull.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/segmentation/extract_polygonal_prism_data.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/segmentation/extract_clusters.h>
 
 /*Computer Descriptors*/
 #include <pcl/common/centroid.h>
@@ -241,6 +239,8 @@ public:
 		filter.filter(*passThruCloud);
 	}
 
+	/*Here I used Euclidean clustering to get the clouds of the base pillow which happens to be
+	the largest cluster in the scene*/
 	void getBackGroundCluster() const
 	{	
 		// boost::filesystem::path imagesPath, cloudsPath;
@@ -248,51 +248,93 @@ public:
 
 		pcl::io::loadPCDFile<PointT>("background_cloud.pcd", *cloud_background);
 		//remove the table from the background so that what we are left with are the pillows
-		PointCloudTPtr table(new PointCloudT);
-		PointCloudTPtr concaveHull(new PointCloudT);
+		PointCloudTPtr filteredCloud(new PointCloudT);
 		PointCloudTPtr pillows(new PointCloudT);
+		PointCloudTPtr cloud_f(new PointCloudT);
 		// Get the plane model, if present.
-		pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+		pcl::VoxelGrid<pcl::PointXYZ> vg;
+		vg.setInputCloud(cloud_background);
+		vg.setLeafSize (0.01f, 0.01f, 0.01f);
+		vg.filter (*filteredCloud);
+
 		pcl::SACSegmentation<pcl::PointXYZ> segmentation;
-		segmentation.setInputCloud(cloud_background);
+		pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+		pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+		PointCloudTPtr table(new PointCloudT);
+
+		segmentation.setOptimizeCoefficients (true);
 		segmentation.setModelType(pcl::SACMODEL_PLANE);
 		segmentation.setMethodType(pcl::SAC_RANSAC);
-		segmentation.setDistanceThreshold(0.7874);   //height of table from cam center
-		segmentation.setOptimizeCoefficients(true);
-		pcl::PointIndices::Ptr tableIndices(new pcl::PointIndices);
-		segmentation.segment(*tableIndices, *coefficients);
+		segmentation.setMaxIterations (100);
+		segmentation.setDistanceThreshold(0.1);   //height of table from cam center
 
-		if (tableIndices->indices.size() == 0)
-			std::cout << "Could not find a plane in the scene." << std::endl;
-		else
+		int i = 0, nr_points = static_cast<int>(filteredCloud->points.size());
+		for(; filteredCloud->points.size()>0.3*nr_points ;)
 		{
-			// Copy the points of the plane to a new cloud.
+			segmentation.setInputCloud(filteredCloud);
+			segmentation.segment(*inliers, *coefficients);
+			if(inliers->indices.size() == 0)
+			{
+				OUT("Planar model not found");
+				break;
+			}
+			// Extract the planar inliers from the input cloud
 			pcl::ExtractIndices<pcl::PointXYZ> extract;
-			extract.setInputCloud(cloud_background);
-			extract.setIndices(tableIndices);
-			extract.filter(*table);
+			extract.setInputCloud (filteredCloud);
+			extract.setIndices (inliers);
+			extract.setNegative (false);
 
-			// Retrieve the convex hull.
-			pcl::ConvexHull<pcl::PointXYZ> hull;
-			hull.setInputCloud(table);
-			hull.reconstruct(*concaveHull);
+			// Get the points associated with the planar surface
+			extract.filter (*table);
 
-			// Prism object.
-			pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
-			prism.setInputCloud(cloud_background);
-			prism.setInputPlanarHull(concaveHull);
-			// First parameter: minimum Z value. Set to 0, segments pillows lying on the plane (can be negative).
-			// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the pillows you expect.
-			prism.setHeightLimits(0, 0.1016f);
-			pcl::PointIndices::Ptr backgroundIndices(new pcl::PointIndices);
-
-			prism.segment(*backgroundIndices);
-
-			// Get and show all points retrieved by the hull.
-			extract.setIndices(backgroundIndices);
-			extract.filter(*pillows);
-			this->pillows = pillows;
+			// Remove the planar inliers, extract the rest
+			extract.setNegative (true);
+			extract.filter (*cloud_f);
+			*filteredCloud = *cloud_f;
 		}
+
+		// Creating the KdTree object for the search method of the extraction
+		pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+		tree->setInputCloud (filteredCloud);
+
+		std::vector<pcl::PointIndices> cluster_indices;
+		pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+		ec.setClusterTolerance (0.02); // 2cm
+		ec.setMinClusterSize (50);
+		ec.setMaxClusterSize (2500);
+		ec.setSearchMethod (tree);
+		ec.setInputCloud (filteredCloud);
+		ec.extract (cluster_indices);
+
+		int j = 0;
+		std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr > clustersVec;
+		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
+		{
+		  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+		  for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
+		    cloud_cluster->points.push_back (filteredCloud->points[*pit]); //*
+		  cloud_cluster->width = cloud_cluster->points.size ();
+		  cloud_cluster->height = 1;
+		  cloud_cluster->is_dense = true;
+
+		  std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;		  //my additions
+		  clustersVec.push_back(cloud_cluster);
+		  j++;
+		}
+		//find the cluster with the max size and pass it to this->pillows
+		auto max = clustersVec[0]->points.size();
+		pcl::PointCloud<pcl::PointXYZ>::Ptr biggestCluster (new pcl::PointCloud<pcl::PointXYZ>);
+		for(auto x : clustersVec)
+		{
+		  if(max <= x->points.size() ) 
+		    {
+		      max = x->points.size();
+		      biggestCluster = x;
+		    }
+		}
+		std::cout << "biggest Cluster has " << biggestCluster->points.size () << " data points." << std::endl;
+
+		this->pillows = biggestCluster;
 	}
 
 	Eigen::Vector4d getBackGroundCentroid() const
