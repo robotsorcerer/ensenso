@@ -105,6 +105,42 @@ image_transport::CameraPublisher  leftCamPub, rightCamPub;
 std::string encoding = "mono8";
 bool filter = true;
 
+void initCaptureParams()
+{
+  const bool auto_exposure = true;
+  const bool auto_gain = true;
+  const int bining = 1;
+  const float exposure = 0.32;
+  const bool front_light = false;
+  const int gain = 1;
+  const bool gain_boost = false;
+  const bool hardware_gamma = false;
+  const bool hdr = false;
+  const int pixel_clock = 10;
+  const bool projector = true;
+  const int target_brightness = 80;
+  const std::string trigger_mode = "Software";    //this is flex mode
+  const bool use_disparity_map_area_of_interest = true;  //reduce area of interest to aid faster transfer times
+  
+  if(!ensenso_ptr->configureCapture ( auto_exposure,
+                     auto_gain,
+                     bining,
+                     exposure,
+                     front_light,
+                     gain,
+                     gain_boost,
+                     hardware_gamma,
+                     hdr,
+                     pixel_clock,
+                     projector ,
+                     target_brightness,
+                     trigger_mode,
+                     use_disparity_map_area_of_interest))
+  {
+    ROS_INFO("%s", "Could not configure camera parameters");
+  }
+}
+
 void initPublishers()
 {
   ros::NodeHandle nh;
@@ -127,7 +163,8 @@ void initEnsensoParams()
   ensenso_ptr->openTcpPort();
   ensenso_ptr->openDevice();
   ensenso_ptr->enumDevices();  
-  ensenso_ptr->configureCapture();
+  // ensenso_ptr->configureCapture();
+  initCaptureParams();
 }
 
 void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::ImagePtr& msg, \
@@ -188,6 +225,8 @@ void callback (const PointCloudT::Ptr& cloud, \
   sensor_msgs::ImagePtr msg, left_msg, right_msg;
   imagetoMsg(images, msg, left_msg, right_msg);
 
+  ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
+
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
   imagePub.publish(msg);  
@@ -211,7 +250,7 @@ int main (int argc, char** argv)
 
   ensenso_ptr->start ();
 
-  ros::Rate rate(30);
+  ros::Rate rate(5);
   while(ros::ok())
   {    
     ensenso_ptr->registerCallback (f);
