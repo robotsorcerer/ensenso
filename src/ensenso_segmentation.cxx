@@ -101,7 +101,7 @@ private:
 	PointCloudPFH125Ptr pfh_desc;
 	PointCloudCRH90Ptr crhHistogram;
 
-	Eigen::Vector4d headHeaight;
+	Eigen::Vector4d headHeaight, bgdCentroid;
 	Eigen::Vector3d headOrientation;
 	ensenso::HeadPose headPose;
 
@@ -174,6 +174,7 @@ public:
 
 		// Objects for storing the point clouds.
 		initPointers();
+		bgdCentroid = getBackGroundCentroid();	
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
 	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
@@ -316,8 +317,8 @@ public:
 		  cloud_cluster->width = cloud_cluster->points.size ();
 		  cloud_cluster->height = 1;
 		  cloud_cluster->is_dense = true;
-
-		  std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;		  //my additions
+		  if(print)
+		  	std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;		  //my additions
 		  clustersVec.push_back(cloud_cluster);
 		  j++;
 		}
@@ -364,10 +365,9 @@ public:
 	{
 		//first compute the centroid of the retrieved cluster
 		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
-		Eigen::Vector4d headCentroid, headHeight, bgdCentroid;
+		Eigen::Vector4d headCentroid, headHeight;
 		compute3DCentroid (*headNow, headCentroid);
 		//now subtract the height of camera above table from computed centroid
-		bgdCentroid = getBackGroundCentroid();
 		headHeight = headCentroid - bgdCentroid;
 		headHeight(3) = 1;  		//to allow for rotation
 
@@ -749,14 +749,19 @@ int main(int argc, char* argv[])
 	ros::init(argc, argv, "ensensor_segmentation_node"); 
 	ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
-	bool running, print;
+	bool running, print, disp;
 	print = false;
 	running = true;
+	disp = false;
 
 	if (pcl::console::find_argument (argc, argv, "-p") >= 0)
 	{
 	  print = true;
 	}
+	// if (pcl::console::find_argument (argc, argv, "-d") >= 0)
+	// {
+	//   print = true;
+	// }
 
 	ros::NodeHandle nh;
 
