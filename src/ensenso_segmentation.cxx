@@ -12,6 +12,7 @@
 #include <ensenso/HeadPose.h> //local msg communicator of 5-d pose
 
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/crop_hull.h>
 #include <pcl/surface/convex_hull.h>
 #include <pcl/surface/concave_hull.h>
 #include <pcl/filters/extract_indices.h>
@@ -90,7 +91,7 @@ private:
 	//indices of segmented face
 	pcl::PointIndices::Ptr inliers, faceIndices;
 	// Prism object.
-	pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+	pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism, prism2;
 
 	/*Global descriptor objects*/
 	PointCloudNPtr normals;
@@ -100,6 +101,7 @@ private:
 	PointCloudTVFH308Ptr vfh_desc;
 	PointCloudPFH125Ptr pfh_desc;
 	PointCloudCRH90Ptr crhHistogram;
+  	std::vector<pcl::Vertices> hullPolygons;
 
 	Eigen::Vector4d headHeaight, bgdCentroid;
 	Eigen::Vector3d headOrientation;
@@ -236,7 +238,7 @@ public:
 
 		//filter points with particular z range
 		filter.setFilterFieldName("x");
-		filter.setFilterLimits(-10, 10);
+		filter.setFilterLimits(0, 5);
 		filter.filter(*passThruCloud);
 	}
 
@@ -426,9 +428,10 @@ public:
 		ensenso::HeadPose pose;
 		pose.stamp = ros::Time::now();
 		pose.seq   = ++counter;
-		pose.x = headHeight(0);
-		pose.y = headHeight(1);
-		pose.z = headHeight(2);
+		//convert from meters to mm
+		pose.x = headHeight(0)*1000;
+		pose.y = headHeight(1)*1000;
+		pose.z = headHeight(2)*1000;
 		pose.pitch = polar;
 		pose.yaw = azimuth;
 
@@ -454,7 +457,7 @@ public:
 
 	  for(; running && ros::ok() ;)
 	  {
-	    /*populate the cloud viewer and prepare for publishing*/
+	    //populate the cloud viewer and prepare for publishing
 	    if(updateCloud)
 	    {   
 	      std::lock_guard<std::mutex> lock(mutex); 
@@ -466,11 +469,23 @@ public:
 	  viewer->close();
 	}
 
+	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
+	{
+	   std::cout << "Picking event active" << std::endl;
+	   if(event.getPointIndex()!=-1)
+	   {
+	       float x,y,z;
+	       event.getPoint(x,y,z);
+	       std::cout << x<< "; " << y<<"; " << z << std::endl;
+	   }
+	}
+
 	void planeSeg()
 	{	/*Generic initializations*/
 		//viewer for segmentation and stuff 		
 		// boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
-		getMultiViewer(/*multiViewer*/);
+		getMultiViewer();
+		multiViewer->registerPointPickingCallback(&Segmentation::pp_callback, *this);
 		// Create the segmentation object
 		pcl::SACSegmentation<PointT> seg;
 		// Optional
@@ -481,6 +496,7 @@ public:
 		seg.setMethodType (pcl::SAC_RANSAC);
 		/*set the distance to the model threshold to use*/
 		getBackGroundCentroid();  //retrieve pillows
+		// Get the plane model, if present.		
 		seg.setDistanceThreshold (distThreshold);	//as measured
 		{
 			std::lock_guard<std::mutex> lock(mutex);	
@@ -488,86 +504,109 @@ public:
 			segCloud = boost::shared_ptr<pcl::PointCloud<PointT> >(&this->cloud);
 			updateCloud = false;	
 		}
-		seg.setInputCloud (segCloud);
+
+		/*
+		To ease computation, I downsample the input cloud with a 
+		voxel grid of leaf size 1cm
+		*/
+		PointCloudTPtr filteredSegCloud(new PointCloudT);
+		pcl::VoxelGrid<pcl::PointXYZ> vg;
+		vg.setInputCloud(segCloud);
+		vg.setLeafSize (0.01f, 0.01f, 0.01f);
+		vg.filter (*filteredSegCloud);
+
+		seg.setInputCloud (filteredSegCloud);
 		seg.segment (*inliers, *coefficients);
 
-		if(inliers->indices.size() == 0)
-			ROS_INFO("Could not find plane in scene");
-		else
+		// Copy the points of the plane to a new cloud.
+		pcl::ExtractIndices<PointT> extract;
+		extract.setInputCloud(filteredSegCloud);
+		extract.setIndices(inliers);
+		// Get the points associated with the planar surface
+		extract.filter(*plane);
+		//retrieve convex hull
+		pcl::ConvexHull<PointT> hull;
+		hull.setInputCloud(plane);
+
+		//ensure hull is 2-d
+		hull.setDimension(2);
+		hull.reconstruct(*convexHull);
+
+		//redundant check
+		if (hull.getDimension() == 2)
 		{
-			// Copy the points of the plane to a new cloud.
-			pcl::ExtractIndices<PointT> extract;
-			extract.setInputCloud(segCloud);
-			extract.setIndices(inliers);
-			// Get the points associated with the planar surface
-			extract.filter(*plane);
-			//retrieve convex hull
-			pcl::ConvexHull<PointT> hull;
-			hull.setInputCloud(plane);
+			prism.setInputCloud(filteredSegCloud);
+			prism.setInputPlanarHull(convexHull);
+			// First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
+			// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
+			prism.setHeightLimits(zmin, zmax);
+			prism.segment(*faceIndices);
 
-			//ensure hull is 2-d
-			hull.setDimension(2);
-			hull.reconstruct(*convexHull);
+			// Get and show all points retrieved by the hull.
+			extract.setIndices(faceIndices);
+			extract.filter(*faces);
 
-			//redundant check
-			if (hull.getDimension() == 2)
+/*			//crop the convex hull
+			pcl::CropHull<pcl::PointXYZ> cropHull;			
+			cropHull.setHullIndices(hullPolygons);
+			cropHull.setHullCloud(faces);
+			cropHull.setDim(2); // if you uncomment this, it will work
+			cropHull.setCropOutside(true); // this will remove points outside the hull
+			// cropHullFilter.setInputCloud(faces);*/
+
+			// PointCloudT radius   
+			PointCloudTPtr passThruCloud  (new PointCloudT);
+			passThrough(*faces, passThruCloud);
+
+			headPose = getHeadPose(faces);
+
+			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
+			multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
+			multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
+			multiViewer->addPointCloud(this->pillows, "background", v4);
+
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "background");
+
+			while (running && ros::ok())
 			{
-				prism.setInputCloud(segCloud);
-				prism.setInputPlanarHull(convexHull);
-				// First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
-				// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
-				prism.setHeightLimits(zmin, zmax);
-				prism.segment(*faceIndices);
+				/*populate the cloud viewer and prepare for publishing*/
+				if(updateCloud)
+				{   
+				  std::lock_guard<std::mutex> lock(mutex); 
+				  updateCloud = false;
+				  multiViewer->updatePointCloud(segCloud, "Original Cloud");
 
-				// Get and show all points retrieved by the hull.
-				extract.setIndices(faceIndices);
-				extract.filter(*faces);
+				  vg.setInputCloud(segCloud);
+				  vg.filter (*filteredSegCloud);
 
-				// PointCloudT radius   
-				PointCloudTPtr passThruCloud  (new PointCloudT);
-				passThrough(*faces, passThruCloud);
+				  prism.setInputCloud(filteredSegCloud);
+				  prism.setInputPlanarHull(convexHull);
+				  // First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
+				  // Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
+				  prism.setHeightLimits(zmin, zmax);
+				  prism.segment(*faceIndices);
+				  // Get and show all points retrieved by the hull.
+				  extract.setIndices(faceIndices);
+				  extract.filter(*faces);				  
+				  multiViewer->updatePointCloud(faces, "Segmented Cloud");
 
-				headPose = getHeadPose(faces);
+				  //filter segmented faces
+				  passThrough(*faces, passThruCloud);
+				  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
-				multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
-				multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
-				multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
-				multiViewer->addPointCloud(this->pillows, "background", v4);
+				  multiViewer->updatePointCloud(this->pillows, "background");
 
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
-				multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "background");
-
-				while (running && ros::ok())
-				{
-					/*populate the cloud viewer and prepare for publishing*/
-					if(updateCloud)
-					{   
-					  std::lock_guard<std::mutex> lock(mutex); 
-					  updateCloud = false;
-					  multiViewer->updatePointCloud(segCloud, "Original Cloud");
-
-					  prism.segment(*faceIndices);
-					  extract.setIndices(faceIndices);
-					  extract.filter(*faces);					  
-					  multiViewer->updatePointCloud(faces, "Segmented Cloud");
-
-					  //filter segmented faces
-					  passThrough(*faces, passThruCloud);
-					  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
-
-					  multiViewer->updatePointCloud(this->pillows, "background");
-
-					  headPose = getHeadPose(faces);
-					}	    
-					multiViewer->spinOnce(10);
-				}
-				multiViewer->close();
+				  headPose = getHeadPose(faces);
+				}	    
+				multiViewer->spinOnce(1);
 			}
-			else
-				ROS_INFO("Chosen hull is not planar");
+			multiViewer->close();
 		}
+		else
+			ROS_INFO("Chosen hull is not planar");
 	}
 
 	void getDescriptors();
