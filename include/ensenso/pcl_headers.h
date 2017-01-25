@@ -11,8 +11,6 @@
 /*pcl commons*/
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
-#include <pcl/filters/voxel_grid.h>
-
 /*pcl visualizations*/
 #include <pcl/range_image/range_image.h>
 #include <pcl/visualization/cloud_viewer.h>
@@ -41,4 +39,7 @@
 /*Filters, Indices*/
 #include <pcl/common/centroid.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/radius_outlier_removal.h>
+
 

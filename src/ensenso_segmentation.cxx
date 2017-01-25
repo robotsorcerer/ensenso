@@ -63,8 +63,9 @@ class Segmentation
 {
 private:	
 	friend class objectPoseEstim; //friend class forward declaration
-	bool updateCloud, save, running, print;
+	bool updateCloud, save, running, print, savepcd;
 	ros::NodeHandle nh_;
+	std::ostringstream oss;
  	const std::string cloudName;
 	ros::Subscriber cloud_sub_;
 	std::mutex mutex;
@@ -96,6 +97,7 @@ private:
 	/*Global descriptor objects*/
 	PointCloudNPtr normals;
  	NormalEstimation normalEstimation;
+ 	pcl::PCDWriter writer;
 
 	PointCloudTVFH308Ptr ourcvfh_desc;
 	PointCloudTVFH308Ptr vfh_desc;
@@ -117,7 +119,8 @@ private:
 	uint64_t counter;
 public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
-	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), cloudName("Segmentation Cloud"),
+	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
+	cloudName("Segmentation Cloud"), savepcd(false),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
 	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0)
 	{	
@@ -176,7 +179,7 @@ public:
 
 		// Objects for storing the point clouds.
 		initPointers();
-		bgdCentroid = getBackGroundCentroid();	
+		bgdCentroid << 0.0, 0.0, distThreshold, 1.0;//getBackGroundCentroid();	
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
 	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
@@ -209,13 +212,28 @@ public:
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
-		multiViewer->addText("background", 10, 10, "v4 text", v4);
+		multiViewer->addText("Base IAB Cluster", 10, 10, "v4 text", v4);
+
+		multiViewer->registerKeyboardCallback(&Segmentation::keyboardEventOccurred, *this);
+	}
+
+	void keyboardEventOccurred(const pcl::visualization::KeyboardEvent &event,
+	                            void* )
+	{
+	  if (event.keyUp())
+	  {
+	  	switch(event.getKeyCode())
+	  	{	
+	  		case 'p':
+	  			savepcd=true;
+	  		  break;
+	  	}
+	  }
 	}
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
 	{
 		PointCloudT cloud;	
-
 		getCloud(ensensoCloud, cloud);
 		std::lock_guard<std::mutex> lock(mutex);
 		this->cloud = cloud;
@@ -235,11 +253,73 @@ public:
 		pcl::PassThrough<PointT> filter;
 		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
 		filter.setInputCloud(temp_cloud);
-
-		//filter points with particular z range
-		filter.setFilterFieldName("x");
-		filter.setFilterLimits(0, 5);
+		filter.setFilterFieldName("y");
+		filter.setFilterLimits(0, 2);
 		filter.filter(*passThruCloud);
+	}
+
+	void outlierRemoval(const PointCloudTPtr cloud_in, PointCloudTPtr cloud_out) const
+	{
+		pcl::RadiusOutlierRemoval<PointT> rorfilter (true); // Initializing with true will allow us to extract the removed indices
+		rorfilter.setInputCloud (cloud_in);
+		rorfilter.setRadiusSearch (0.8);
+		rorfilter.setMinNeighborsInRadius (15);
+		// rorfilter.setNegative (true);
+		rorfilter.filter (*cloud_out);
+		// The resulting cloud_out contains all points of cloud_in that have 4 or less neighbors within the 0.1 search radius
+		// indices_rem = rorfilter.getRemovedIndices ();
+		// The indices_rem array indexes all points of cloud_in that have 5 or more neighbors within the 0.1 search radius
+	}
+
+	void saveAllClouds(const PointCloudTPtr segCloud, 
+					   const PointCloudTPtr faces, 
+					   const PointCloudTPtr passThroughCloud, 
+					   const PointCloudTPtr pillows)
+	{
+		oss.str("");
+		oss << counter;
+		const std::string baseName = oss.str();
+
+		const std::string origCloud_id = "orig_" + baseName + "_cloud.pcd";// baseName + "_cloud.pcd";
+		const std::string facesCloud_id = "segFace_" + baseName + "_cloud.pcd";
+		const std::string filteredCloud_id = "filteredSegFace_" + baseName + "_cloud.pcd";
+		const std::string backGroundCloud_id = "backCloud_" + baseName + "_cloud.pcd";
+
+		ROS_INFO_STREAM("saving cloud: " << origCloud_id);
+		writer.writeBinary(origCloud_id, *segCloud);
+		ROS_INFO_STREAM("saving cloud: " << facesCloud_id);
+		writer.writeBinary(facesCloud_id, *faces);
+		ROS_INFO_STREAM("saving cloud: " << filteredCloud_id);
+		writer.writeBinary(filteredCloud_id, *passThroughCloud);
+		ROS_INFO_STREAM("saving cloud: " << backGroundCloud_id);
+		writer.writeBinary(backGroundCloud_id, *pillows);
+		
+		savefaces(faces);
+
+		ROS_INFO_STREAM("saving complete!");
+		++counter;
+	}
+
+	void savefaces(const PointCloudTPtr faces)
+	{
+		//Now we write the points to a text file for visualization processing
+		std::ofstream saver("faces.csv", std::ios_base::out);
+		ROS_INFO("Saving faces to face.csv");
+		for(auto i=0; i < faces->points.size(); ++i)
+		{
+			saver << 100*faces->points[i].x << '\t' << 100*faces->points[i].y 
+				  << '\t' << 100*faces->points[i].z << "\n";
+		}
+		saver.close();
+	}
+
+	void savepoints(Eigen::Vector4d &centroid)
+	{
+	    //Now we write the points to a text file for visualization processing
+	    std::ofstream midface("pose.csv", std::ios_base::app | std::ios_base::out);
+	    midface << centroid(0) <<"\t" <<centroid(1)<< "\t" << centroid(2) << "\n";
+	    ROS_INFO("Writing %f, %f, %f to pose.csv", centroid(0), centroid(12), centroid(2));
+	    midface.close();
 	}
 
 	/*Here I used Euclidean clustering to get the clouds of the base pillow which happens to be
@@ -354,14 +434,19 @@ public:
 		return centroid;
 	}
 
-	void savepoints(Eigen::Vector4d &centroid)
+	double findMax(const PointCloudTPtr cloud_in)
 	{
-	    //Now we write the points to a text file for visualization processing
-	    std::ofstream midface("pose.csv", std::ios_base::app | std::ios_base::out);
-	    midface << centroid(0) <<"\t" <<centroid(1)<< "\t" << centroid(2) << "\n";
-	    ROS_INFO("Writing %f, %f, %f to pose.csv", centroid(0), centroid(12), centroid(2));
-	    midface.close();
+		double max = cloud_in->points[0].z;
+		for(auto j=1; j < cloud_in->points.size(); ++j)
+		{
+		  if(max < cloud_in->points[j].z ) 
+		    {
+		      max = cloud_in->points[j].z;
+		    }
+		}
+		return max;
 	}
+
 
 	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
 	{
@@ -371,6 +456,7 @@ public:
 		compute3DCentroid (*headNow, headCentroid);
 		//now subtract the height of camera above table from computed centroid
 		headHeight = headCentroid - bgdCentroid;
+		ROS_INFO_STREAM("headHeight = " << headHeight);
 		headHeight(3) = 1;  		//to allow for rotation
 
 		if(save)
@@ -546,29 +632,22 @@ public:
 			extract.setIndices(faceIndices);
 			extract.filter(*faces);
 
-/*			//crop the convex hull
-			pcl::CropHull<pcl::PointXYZ> cropHull;			
-			cropHull.setHullIndices(hullPolygons);
-			cropHull.setHullCloud(faces);
-			cropHull.setDim(2); // if you uncomment this, it will work
-			cropHull.setCropOutside(true); // this will remove points outside the hull
-			// cropHullFilter.setInputCloud(faces);*/
-
 			// PointCloudT radius   
-			PointCloudTPtr passThruCloud  (new PointCloudT);
+			PointCloudTPtr passThruCloud  (new PointCloudT), outlierRemCloud(new PointCloudT);
 			passThrough(*faces, passThruCloud);
+			outlierRemoval(faces, outlierRemCloud);
 
 			headPose = getHeadPose(faces);
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
 			multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
-			multiViewer->addPointCloud(this->pillows, "background", v4);
+			multiViewer->addPointCloud(outlierRemCloud, "Base IAB Cluster", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "background");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Base IAB Cluster");
 
 			while (running && ros::ok())
 			{
@@ -584,8 +663,7 @@ public:
 
 				  prism.setInputCloud(filteredSegCloud);
 				  prism.setInputPlanarHull(convexHull);
-				  // First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
-				  // Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
+
 				  prism.setHeightLimits(zmin, zmax);
 				  prism.segment(*faceIndices);
 				  // Get and show all points retrieved by the hull.
@@ -597,10 +675,23 @@ public:
 				  passThrough(*faces, passThruCloud);
 				  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
 
-				  multiViewer->updatePointCloud(this->pillows, "background");
+
+				  outlierRemoval(faces, outlierRemCloud);
+				  multiViewer->updatePointCloud(outlierRemCloud, "Base IAB Cluster");
+
+				  if(print){
+				  ROS_INFO("trimmedg cloud has %lu points", passThruCloud->points.size());
+				  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
+				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
+				  }
 
 				  headPose = getHeadPose(faces);
-				}	    
+				}	 
+				if(savepcd)
+				{
+					savepcd = false;
+					saveAllClouds(segCloud, faces, passThruCloud, this->pillows);
+				}   
 				multiViewer->spinOnce(1);
 			}
 			multiViewer->close();
