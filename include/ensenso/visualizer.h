@@ -34,7 +34,7 @@ public:
 	: pos_x(0), pos_y(0), pos_z(0), view_x(0), 
 		view_y(-1), view_z(0), view_up_x(0), view_up_y(1), view_up_z(1), text_id(0),
 		viewport(0), updateCloud(false), save(false), screen_height(640), 
-		screen_width(480), pcl_viewer("ensenso cloud")
+		screen_width(480), pcl_viewer("ensenso_cloud")
 	{
 		start();
 	}
