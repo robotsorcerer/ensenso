@@ -61,8 +61,7 @@ std_msgs
 
 catkin_package(
   INCLUDE_DIRS include
-   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs 
-                  tf  tf_conversions
+   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs tf  tf_conversions
 )
 
 ###########

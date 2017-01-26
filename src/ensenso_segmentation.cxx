@@ -93,6 +93,9 @@ private:
 	Eigen::Vector3d headOrientation;
 	ensenso::HeadPose headPose;
 
+	PointCloudTPtr facesOnly, passThruCloud, outlierRemCloud;
+	pcl::PointIndices::Ptr largestIndices;	
+
 	double x, y, z, \
 	x_sq, y_sq, z_sq;  //used to compute spherical coordinates
 	
@@ -132,11 +135,15 @@ public:
 		filteredCloud 		= PointCloudTPtr (new PointCloudT);
 		cloud_background 	= PointCloudTPtr (new PointCloudT);
 		pillows				= PointCloudTPtr (new PointCloudT);
+		facesOnly			= PointCloudTPtr (new PointCloudT);
+		passThruCloud 		= PointCloudTPtr (new PointCloudT);
+		outlierRemCloud		= PointCloudTPtr (new PointCloudT);
 
 		//Segmentation Models
 		coefficients 		= pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
 		inliers 			= pcl::PointIndices::Ptr  (new pcl::PointIndices);
-		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
+		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);
+		largestIndices		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
 
 		normals 			= PointCloudNPtr (new PointCloudN);	
 		// multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
@@ -192,7 +199,7 @@ public:
 		//bottom-left
 		multiViewer->createViewPort(0.0, 0.0, 0.5, 0.5, v3);
 		multiViewer->setBackgroundColor (0.2, 0.2, 0.3, v3);
-		multiViewer->addText("PassThrough Filtered Segmented Cloud", 10, 10, "v3 text", v3);
+		multiViewer->addText("EC Filtered Cloud", 10, 10, "v3 text", v3);
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
@@ -536,6 +543,44 @@ public:
 	   }
 	}
 
+	bool getLargestCluster(const PointCloudTPtr cloud, pcl::PointIndices::Ptr &indices, 
+							const double &tolerance = 0.052, 
+							const int &min_size = 300, 
+							const int &max_size = 3000)
+	{
+	    // Creating the KdTree object for the search method of the extraction
+	    TreeKdPtr tree (new TreeKd ());
+	    tree->setInputCloud (cloud);
+
+	    //Runs the cluster extraction algorithm
+	    std::vector<pcl::PointIndices> cluster_indices;
+	    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+	    ec.setClusterTolerance (tolerance);
+	    ec.setMinClusterSize (min_size);
+	    ec.setMaxClusterSize (max_size);
+	    ec.setSearchMethod (tree);
+	    ec.setInputCloud (cloud);
+	    if(indices->indices.size()) ec.setIndices(indices);
+	    ec.extract (cluster_indices);
+
+	    PointCloudTPtr largest_cluster (new PointCloudT);
+
+	    // If no clusters were found, return an empty cloud
+	    if(!cluster_indices.size()) return false;
+
+	    //Find the largest cluster index
+	    int largest_cluster_index = 0;
+	    unsigned largest_cluster_size = 0;
+	    for (int j = 0; j < cluster_indices.size(); ++j) {
+	        if (cluster_indices[j].indices.size() > largest_cluster_size) {
+	            largest_cluster_size = cluster_indices[j].indices.size();
+	            largest_cluster_index = j;
+	        }
+	    }
+	    *indices= cluster_indices[largest_cluster_index];
+	    return true;
+	}
+
 	void planeSeg()
 	{	/*Generic initializations*/
 		//viewer for segmentation and stuff 		
@@ -602,8 +647,11 @@ public:
 			extract.setIndices(faceIndices);
 			extract.filter(*faces);
 
-			// PointCloudT radius   
-			PointCloudTPtr passThruCloud  (new PointCloudT), outlierRemCloud(new PointCloudT);
+			getLargestCluster(faces, largestIndices);
+			extract.setIndices(largestIndices);
+			extract.filter(*facesOnly);
+
+			// PointCloudT radius   			
 			passThrough(*faces, passThruCloud);
 			outlierRemoval(faces, outlierRemCloud);
 
@@ -611,13 +659,13 @@ public:
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
-			multiViewer->addPointCloud(passThruCloud, "Filtered Cloud", v3);
+			multiViewer->addPointCloud(facesOnly, "EC Filtered Cloud", v3);
 
 			multiViewer->addPointCloud(outlierRemCloud, "Base IAB Cluster", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Filtered Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "EC Filtered Cloud");
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Base IAB Cluster");
 
@@ -643,9 +691,13 @@ public:
 				  extract.filter(*faces);				  
 				  multiViewer->updatePointCloud(faces, "Segmented Cloud");
 
+				  getLargestCluster(faces, largestIndices);
+				  extract.setIndices(largestIndices);
+				  extract.filter(*facesOnly);
+
 				  //filter segmented faces
 				  passThrough(*faces, passThruCloud);
-				  multiViewer->updatePointCloud(passThruCloud, "Filtered Cloud");
+				  multiViewer->updatePointCloud(facesOnly, "EC Filtered Cloud");
 
 				  outlierRemoval(faces, outlierRemCloud);
 				  multiViewer->updatePointCloud(outlierRemCloud, "Base IAB Cluster");

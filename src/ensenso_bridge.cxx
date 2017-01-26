@@ -110,7 +110,7 @@ void initCaptureParams()
 {
   const bool auto_exposure = true;
   const bool auto_gain = true;
-  const int bining = 2; //Max. fps (3D): 10 (2x Binning: 30) and 64 disparity levels
+  const int bining = 1; //Max. fps (3D): 10 (2x Binning: 30) and 64 disparity levels
   const float exposure = 0.32;
   const bool front_light = false;
   const int gain = 1;

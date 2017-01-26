@@ -1,9 +1,8 @@
 
-#include <tf/tf.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include "tf_conversions/tf_eigen.h"
 #include <ensenso/camera_matrices.h>
+#include <ensenso/ensenso_headers.h>
 
 namespace cam_info{
 

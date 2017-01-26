@@ -1,10 +1,19 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
-
 #include <ros/ros.h>
 #include <string>
+/*
+Without defining boost scoped enums, linking breaks the compilation. 
+See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-filesystem
+*/
+#define BOOST_NO_CXX11_SCOPED_ENUMS		
+#include <boost/filesystem.hpp>
+#undef BOOST_NO_CXX11_SCOPED_ENUMS
+#include <boost/tuple/tuple.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
-
+#include "tf_conversions/tf_eigen.h"
+#include <tf/tf.h>
 //Forward Declarations
 namespace pathfinder
 {

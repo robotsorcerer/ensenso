@@ -23,8 +23,6 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
-#define OUT(__x__) std::cout << __x__ << std::endl;
-
 /*Globlal namespaces and aliases*/
 using namespace pathfinder;
 
