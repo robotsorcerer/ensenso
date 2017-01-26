@@ -36,6 +36,8 @@ find_package(catkin REQUIRED COMPONENTS
   rostime  
   message_filters
   cv_bridge
+  tf
+  tf_conversions
   image_transport
   roslib
   std_msgs
@@ -59,7 +61,8 @@ std_msgs
 
 catkin_package(
   INCLUDE_DIRS include
-   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs
+   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs 
+                  tf  tf_conversions
 )
 
 ###########

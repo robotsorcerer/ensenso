@@ -26,38 +26,6 @@
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 
-/*Globlal namespaces and aliases*/
-using PointT 			= pcl::PointXYZ;
-using PointCloudT 		= pcl::PointCloud<PointT>;
-using PointCloudTPtr 	= PointCloudT::Ptr;
-
-using PointN  			= pcl::Normal;
-using PointCloudN 		= pcl::PointCloud<PointN>;
-using PointCloudNPtr  	= PointCloudN::Ptr;
-
-using pcl_viz 			= pcl::visualization::PCLVisualizer;
-using NormalEstimation 	= pcl::NormalEstimation<PointT, PointN>;
-
-using CRH90 				= pcl::Histogram<90>;
-using PointCloudCRH90		= pcl::PointCloud<CRH90>;
-using PointCloudCRH90Ptr	= PointCloudCRH90::Ptr;
-
-/*Descriptor aliases*/
-using PFH125 				= pcl::PFHSignature125;
-using PointCloudPFH125 		= pcl::PointCloud<PFH125>;
-using PointCloudPFH125Ptr 	= pcl::PointCloud<PFH125>::Ptr;
-
-/*Kd Trees*/
-using TreeKd = pcl::search::KdTree<PointT>;
-using TreeKdPtr = pcl::search::KdTree<PointT>::Ptr;
-
-using VFH308 = pcl::VFHSignature308;
-using PointCloudVFH308 = pcl::PointCloud<VFH308>;
-using PointCloudTVFH308Ptr = PointCloudVFH308::Ptr;
-
-#define OUT(__o__) std::cout<< __o__ << std::endl;
-
-
 // void getTransformationMatrix()
 // {
 //   if(!initCaptureParams)
@@ -451,27 +419,6 @@ public:
 		return centroid;
 	}
 
-	double findMax(const PointCloudTPtr cloud_in)
-	{
-		double max = cloud_in->points[0].z;
-		for(auto j=1; j < cloud_in->points.size(); ++j)
-		{
-		  if(max < cloud_in->points[j].z ) 
-		    {
-		      max = cloud_in->points[j].z;
-		    }
-		}
-		return max;
-	}
-/*
- * Gets the orientation quaternion of a mesh model such that the z-axis is normal to the plane, and the x-y
- * axis are as close as possible to the the table frame
- *
- * \param headNow  The point cloud of the head
- *
- * \returns quaternion  The quaternion that would rotate the origin frame to fit the head model (z-normal)
- * */
-
 	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
 	{
 		//first compute the centroid of the retrieved cluster
@@ -480,7 +427,6 @@ public:
 		compute3DCentroid (*headNow, headCentroid);
 		//now subtract the height of camera above table from computed centroid
 		headHeight = bgdCentroid - headCentroid;
-		ROS_INFO_STREAM("headHeight = " << headHeight);
 		headHeight(3) = 1;  		//to allow for rotation
 
 		if(save)
@@ -503,7 +449,7 @@ public:
 		// Eigen::ParametrizedLine<double,4> centralLine;
 		back 		<< bgdCentroid(0), bgdCentroid(1), bgdCentroid(2);
 		projback  	= back;
-		projback(2) += 1;
+		projback(2) += 1;  //add a second vector normal to background centroid vexctor
 		Eigen::ParametrizedLine<double,3> centralLine = Eigen::ParametrizedLine<double,\
 														3>::Through(back, projback);
 		/*Compute the projection of the head centroid onto the line*/

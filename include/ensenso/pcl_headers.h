@@ -43,3 +43,33 @@
 #include <pcl/filters/radius_outlier_removal.h>
 
 
+/*Globlal namespaces and aliases*/
+using PointT 			= pcl::PointXYZ;
+using PointCloudT 		= pcl::PointCloud<PointT>;
+using PointCloudTPtr 	= PointCloudT::Ptr;
+
+using PointN  			= pcl::Normal;
+using PointCloudN 		= pcl::PointCloud<PointN>;
+using PointCloudNPtr  	= PointCloudN::Ptr;
+
+using pcl_viz 			= pcl::visualization::PCLVisualizer;
+using NormalEstimation 	= pcl::NormalEstimation<PointT, PointN>;
+
+using CRH90 				= pcl::Histogram<90>;
+using PointCloudCRH90		= pcl::PointCloud<CRH90>;
+using PointCloudCRH90Ptr	= PointCloudCRH90::Ptr;
+
+/*Descriptor aliases*/
+using PFH125 				= pcl::PFHSignature125;
+using PointCloudPFH125 		= pcl::PointCloud<PFH125>;
+using PointCloudPFH125Ptr 	= pcl::PointCloud<PFH125>::Ptr;
+
+/*Kd Trees*/
+using TreeKd = pcl::search::KdTree<PointT>;
+using TreeKdPtr = pcl::search::KdTree<PointT>::Ptr;
+
+using VFH308 = pcl::VFHSignature308;
+using PointCloudVFH308 = pcl::PointCloud<VFH308>;
+using PointCloudTVFH308Ptr = PointCloudVFH308::Ptr;
+
+#define OUT(__o__) std::cout<< __o__ << std::endl;
