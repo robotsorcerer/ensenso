@@ -7,6 +7,7 @@
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
+#include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <ensenso/HeadPose.h> //local msg communicator of 5-d pose
@@ -462,7 +463,14 @@ public:
 		}
 		return max;
 	}
-
+/*
+ * Gets the orientation quaternion of a mesh model such that the z-axis is normal to the plane, and the x-y
+ * axis are as close as possible to the the table frame
+ *
+ * \param headNow  The point cloud of the head
+ *
+ * \returns quaternion  The quaternion that would rotate the origin frame to fit the head model (z-normal)
+ * */
 
 	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
 	{
@@ -471,7 +479,7 @@ public:
 		Eigen::Vector4d headCentroid, headHeight;
 		compute3DCentroid (*headNow, headCentroid);
 		//now subtract the height of camera above table from computed centroid
-		headHeight = headCentroid - bgdCentroid;
+		headHeight = bgdCentroid - headCentroid;
 		ROS_INFO_STREAM("headHeight = " << headHeight);
 		headHeight(3) = 1;  		//to allow for rotation
 
@@ -512,9 +520,9 @@ public:
  		line segment OP on the reference plane 
 		*/
  		// r = sqrt(x^2 + y^2 + z^2)
- 		x    = faceCenter(0) - projectedFace(0);
- 		y 	 = faceCenter(1) - projectedFace(1);
- 		z 	 = faceCenter(2) - projectedFace(2);
+ 		x    = faceCenter(0) /*- projectedFace(0)*/;
+ 		y 	 = faceCenter(1) /*- projectedFace(1)*/;
+ 		z 	 = faceCenter(2) /*- projectedFace(2)*/;
 
  		x_sq = std::pow(x, 2);
  		y_sq = std::pow(y, 2);

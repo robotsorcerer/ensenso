@@ -93,7 +93,8 @@ if(ENSENSO_FOUND)
                     src/pathfinder.cxx)  
 
   set(seg_files src/ensenso_segmentation.cxx
-                src/pathfinder.cxx )                      
+                src/pathfinder.cxx 
+                src/factory_functions.cxx)                      
 
   #add correspondence grouping library
   # add_library(ensenso_grouping src/ensenso_correspondence.cxx)
