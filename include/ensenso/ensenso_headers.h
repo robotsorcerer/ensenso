@@ -2,6 +2,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <ros/ros.h>
 #include <string>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 /*
 Without defining boost scoped enums, linking breaks the compilation. 
 See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-filesystem
@@ -14,6 +16,7 @@ See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-fi
 
 #include "tf_conversions/tf_eigen.h"
 #include <tf/tf.h>
+
 //Forward Declarations
 namespace pathfinder
 {
@@ -57,4 +60,7 @@ namespace generic
     * */
 	tf::Quaternion getQuaternionFromVectors (const Eigen::Vector3d vector1, 
 		const int axis1, const Eigen::Vector3d vector2, const int axis2);
+
+  void savefaces(const pcl::PointCloud<pcl::PointXYZ>::Ptr faces);
+  void savepoints(Eigen::Vector4d &centroid);
 }

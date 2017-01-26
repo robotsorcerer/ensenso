@@ -93,8 +93,9 @@ private:
 	Eigen::Vector3d headOrientation;
 	ensenso::HeadPose headPose;
 
-	PointCloudTPtr facesOnly, passThruCloud, outlierRemCloud;
-	pcl::PointIndices::Ptr largestIndices;	
+	PointCloudTPtr facesOnly, passThruCloud, 
+					largest_cluster, outlierRemCloud;
+	pcl::PointIndices::Ptr largestIndices;		
 
 	double x, y, z, \
 	x_sq, y_sq, z_sq;  //used to compute spherical coordinates
@@ -138,6 +139,7 @@ public:
 		facesOnly			= PointCloudTPtr (new PointCloudT);
 		passThruCloud 		= PointCloudTPtr (new PointCloudT);
 		outlierRemCloud		= PointCloudTPtr (new PointCloudT);
+		largest_cluster 	= PointCloudTPtr  (new PointCloudT);
 
 		//Segmentation Models
 		coefficients 		= pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
@@ -286,32 +288,10 @@ public:
 		ROS_INFO_STREAM("saving cloud: " << backGroundCloud_id);
 		writer.writeBinary(backGroundCloud_id, *pillows);
 		
-		savefaces(faces);
+		generic::savefaces(faces);
 
 		ROS_INFO_STREAM("saving complete!");
 		++counter;
-	}
-
-	void savefaces(const PointCloudTPtr faces)
-	{
-		//Now we write the points to a text file for visualization processing
-		std::ofstream saver("faces.csv", std::ios_base::out);
-		ROS_INFO("Saving faces to face.csv");
-		for(auto i=0; i < faces->points.size(); ++i)
-		{
-			saver << 100*faces->points[i].x << '\t' << 100*faces->points[i].y 
-				  << '\t' << 100*faces->points[i].z << "\n";
-		}
-		saver.close();
-	}
-
-	void savepoints(Eigen::Vector4d &centroid)
-	{
-	    //Now we write the points to a text file for visualization processing
-	    std::ofstream midface("pose.csv", std::ios_base::app | std::ios_base::out);
-	    midface << centroid(0) <<"\t" <<centroid(1)<< "\t" << centroid(2) << "\n";
-	    ROS_INFO("Writing %f, %f, %f to pose.csv", centroid(0), centroid(12), centroid(2));
-	    midface.close();
 	}
 
 	/*Here I used Euclidean clustering to get the clouds of the base pillow which happens to be
@@ -437,7 +417,7 @@ public:
 		headHeight(3) = 1;  		//to allow for rotation
 
 		if(save)
-			savepoints(headCentroid);
+			generic::savepoints(headCentroid);
 
 		//compute the orientation of the segmented cluster about the background
 		Eigen::Vector3d headAngle;
@@ -543,9 +523,10 @@ public:
 	   }
 	}
 
-	bool getLargestCluster(const PointCloudTPtr cloud, pcl::PointIndices::Ptr &indices, 
-							const double &tolerance = 0.052, 
-							const int &min_size = 300, 
+	bool getLargestCluster(const PointCloudTPtr cloud, 
+							const pcl::PointIndices::Ptr indices, 
+							const double &tolerance = 10, 
+							const int &min_size = 500, 
 							const int &max_size = 3000)
 	{
 	    // Creating the KdTree object for the search method of the extraction
@@ -563,21 +544,21 @@ public:
 	    if(indices->indices.size()) ec.setIndices(indices);
 	    ec.extract (cluster_indices);
 
-	    PointCloudTPtr largest_cluster (new PointCloudT);
-
 	    // If no clusters were found, return an empty cloud
 	    if(!cluster_indices.size()) return false;
 
 	    //Find the largest cluster index
-	    int largest_cluster_index = 0;
-	    unsigned largest_cluster_size = 0;
-	    for (int j = 0; j < cluster_indices.size(); ++j) {
-	        if (cluster_indices[j].indices.size() > largest_cluster_size) {
-	            largest_cluster_size = cluster_indices[j].indices.size();
-	            largest_cluster_index = j;
+	    auto maxClusterIdx = 0;
+	    auto maxCluster = 0;
+	    for (int cit =0; cit < cluster_indices.size(); ++cit)
+	    {
+	        if (cluster_indices[cit].indices.size() > maxCluster) 
+	        {
+	            maxCluster = cluster_indices[cit].indices.size();
+	            maxClusterIdx = cit;
 	        }
 	    }
-	    *indices= cluster_indices[largest_cluster_index];
+	    *indices= cluster_indices[maxClusterIdx];
 	    return true;
 	}
 

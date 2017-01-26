@@ -1,6 +1,4 @@
 
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
 #include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
 
@@ -152,6 +150,30 @@ namespace generic{
  		    }
  		}
  		return max;
+ 	}
+
+ 	//save faces points
+ 	void savefaces(const pcl::PointCloud<pcl::PointXYZ>::Ptr faces)
+ 	{
+ 		//Now we write the points to a text file for visualization processing
+ 		std::ofstream saver("faces.csv", std::ios_base::out);
+ 		ROS_INFO("Saving faces to face.csv");
+ 		for(auto i=0; i < faces->points.size(); ++i)
+ 		{
+ 			saver << 100*faces->points[i].x << '\t' << 100*faces->points[i].y 
+ 				  << '\t' << 100*faces->points[i].z << "\n";
+ 		}
+ 		saver.close();
+ 	}
+
+ 	//save centroiuds
+ 	void savepoints(Eigen::Vector4d &centroid)
+ 	{
+ 	    //Now we write the points to a text file for visualization processing
+ 	    std::ofstream midface("pose.csv", std::ios_base::app | std::ios_base::out);
+ 	    midface << centroid(0) <<"\t" <<centroid(1)<< "\t" << centroid(2) << "\n";
+ 	    ROS_INFO("Writing %f, %f, %f to pose.csv", centroid(0), centroid(12), centroid(2));
+ 	    midface.close();
  	}
 }
 
