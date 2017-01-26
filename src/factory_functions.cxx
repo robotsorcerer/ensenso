@@ -1,4 +1,6 @@
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
 

@@ -205,7 +205,7 @@ public:
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
-		multiViewer->addText("Base IAB Cluster", 10, 10, "v4 text", v4);
+		multiViewer->addText("Outlier Removed Cloud", 10, 10, "v4 text", v4);
 
 		multiViewer->registerKeyboardCallback(&Segmentation::keyboardEventOccurred, *this);
 	}
@@ -525,9 +525,9 @@ public:
 
 	bool getLargestCluster(const PointCloudTPtr cloud, 
 							const pcl::PointIndices::Ptr indices, 
-							const double &tolerance = 10, 
-							const int &min_size = 500, 
-							const int &max_size = 3000)
+							const double &tolerance = 0.052, 
+							const int &min_size = 300, 
+							const int &max_size = 2500)
 	{
 	    // Creating the KdTree object for the search method of the extraction
 	    TreeKdPtr tree (new TreeKd ());
@@ -634,21 +634,20 @@ public:
 
 			// PointCloudT radius   			
 			passThrough(*faces, passThruCloud);
-			outlierRemoval(faces, outlierRemCloud);
+			outlierRemoval(facesOnly, outlierRemCloud);
 
-			headPose = getHeadPose(faces);
+			headPose = getHeadPose(facesOnly);
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
 			multiViewer->addPointCloud(facesOnly, "EC Filtered Cloud", v3);
 
-			multiViewer->addPointCloud(outlierRemCloud, "Base IAB Cluster", v4);
+			multiViewer->addPointCloud(outlierRemCloud, "Outlier Removed Cloud", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "EC Filtered Cloud");
-
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Base IAB Cluster");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Outlier Removed Cloud");
 
 			while (running && ros::ok())
 			{
@@ -681,7 +680,7 @@ public:
 				  multiViewer->updatePointCloud(facesOnly, "EC Filtered Cloud");
 
 				  outlierRemoval(faces, outlierRemCloud);
-				  multiViewer->updatePointCloud(outlierRemCloud, "Base IAB Cluster");
+				  multiViewer->updatePointCloud(outlierRemCloud, "Outlier Removed Cloud");
 
 				  if(print){
 				  ROS_INFO("trimmedg cloud has %lu points", passThruCloud->points.size());
@@ -689,7 +688,7 @@ public:
 				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
 				  }
 
-				  headPose = getHeadPose(faces);
+				  headPose = getHeadPose(facesOnly);
 				}	 
 				if(savepcd)
 				{
