@@ -99,9 +99,10 @@ pcl::EnsensoGrabber::Ptr ensenso_ptr;
 
 /*Globals*/
 sensor_msgs::PointCloud2 pcl2_msg;   //msg to be displayed in rviz
+sensor_msgs::CameraInfo left_info, right_info;
 ros::Publisher pclPub;
 image_transport::Publisher imagePub, leftImagePub, rightImagePub;
-image_transport::CameraPublisher  leftCamPub, rightCamPub;
+ros::Publisher leftInfoPub, rightInfoPub;
 std::string encoding = "mono8";
 bool filter = true;
 
@@ -109,7 +110,7 @@ void initCaptureParams()
 {
   const bool auto_exposure = true;
   const bool auto_gain = true;
-  const int bining = 4;
+  const int bining = 1;
   const float exposure = 0.32;
   const bool front_light = false;
   const int gain = 1;
@@ -120,7 +121,7 @@ void initCaptureParams()
   const bool projector = true;
   const int target_brightness = 80;
   const std::string trigger_mode = "Software";    //this is flex mode
-  const bool use_disparity_map_area_of_interest = false;  //reduce area of interest to aid faster transfer times
+  const bool use_disparity_map_area_of_interest = true;  //reduce area of interest to aid faster transfer times
   
   if(!ensenso_ptr->configureCapture ( auto_exposure,
                      auto_gain,
@@ -146,25 +147,26 @@ void initPublishers()
   ros::NodeHandle nh;
   image_transport::ImageTransport it(nh);  
   ROS_INFO("%s", "Initializing Publishers");
+
   imagePub = it.advertise("/ensenso/image_combo", 10);
   leftImagePub = it.advertise("/ensenso/left/image", 10);
   rightImagePub = it.advertise("/ensenso/right/image", 10);
+
   pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso/cloud", 10);
 
-  leftCamPub = it.advertiseCamera("/ensenso/left/cam", 2);
-  rightCamPub = it.advertiseCamera("/ensenso/right/cam", 2);
-
+  leftInfoPub = nh.advertise<sensor_msgs::CameraInfo>("/ensenso/left/cam/info", 2);
+  rightInfoPub = nh.advertise<sensor_msgs::CameraInfo>("/ensenso/right/cam/info", 2);
 }
 
-void initEnsensoParams()
+bool initEnsensoParams()
 {
   ROS_INFO("%s", "Initializing ensenso camera parameters");  
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort();
   ensenso_ptr->openDevice();
   ensenso_ptr->enumDevices();  
-  // ensenso_ptr->configureCapture();
   initCaptureParams();
+  return true;
 }
 
 void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::ImagePtr& msg, \
@@ -213,6 +215,78 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   right_header.stamp = ros::Time::now();
   right_msg = cv_bridge::CvImage(right_header, encoding, right_image).toImageMsg();
 }
+void ensensoExceptionHandling (const NxLibException &ex,
+                 std::string func_nam)
+{
+  ROS_ERROR ("%s: NxLib error %s (%d) occurred while accessing item %s.\n", func_nam.c_str (), ex.getErrorText ().c_str (), ex.getErrorCode (),
+         ex.getItemPath ().c_str ());
+  if (ex.getErrorCode () == NxLibExecutionFailed)
+  {
+    NxLibCommand cmd ("");
+    ROS_WARN ("\n%s\n", cmd.result ().asJson (true, 4, false).c_str ());
+  }
+}
+
+bool getCameraInfo(std::string cam, sensor_msgs::CameraInfo &cam_info)
+{
+  pcl::EnsensoGrabber grabber;
+  NxLibItem camera_ = grabber.camera_;
+  try
+  {
+    cam_info.width = camera_[itmSensor][itmSize][0].asInt();
+    cam_info.height = camera_[itmSensor][itmSize][1].asInt();
+    cam_info.distortion_model = "plumb_bob";
+    // Distortion factors
+    cam_info.D.resize(5);
+    for(std::size_t i = 0; i < cam_info.D.size(); ++i)
+      cam_info.D[i] = camera_[itmCalibration][itmMonocular][cam][itmDistortion][i].asDouble();
+    // K and R matrices
+    for(std::size_t i = 0; i < 3; ++i)
+    {
+      for(std::size_t j = 0; j < 3; ++j)
+      {
+        cam_info.K[3*i+j] = camera_[itmCalibration][itmMonocular][cam][itmCamera][j][i].asDouble();
+        cam_info.R[3*i+j] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmRotation][j][i].asDouble();
+      }
+    }
+    cam_info.P[0] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][0].asDouble();
+    cam_info.P[1] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][0].asDouble();
+    cam_info.P[2] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][0].asDouble();
+    cam_info.P[3] = 0.0;
+    cam_info.P[4] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][1].asDouble();
+    cam_info.P[5] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][1].asDouble();
+    cam_info.P[6] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][1].asDouble();
+    cam_info.P[7] = 0.0;
+    cam_info.P[10] = 1.0;
+    if (cam == "Right")
+    {
+      double B = camera_[itmCalibration][itmStereo][itmBaseline].asDouble() / 1000.0;
+      double fx = cam_info.P[0];
+      cam_info.P[3] = (-fx * B);
+    }
+    return true;
+  }
+  catch (NxLibException &ex)
+  {
+    ensensoExceptionHandling (ex, "getCameraInfo");
+    return false;
+  }
+}
+
+void getTransformationMatrix()
+{
+  if(!initCaptureParams)
+  {
+    ROS_WARN("Camera not initialized");
+  }
+  else
+  {
+    std::string jsonTree = ensenso_ptr->getResultAsJson();
+    ROS_INFO_STREAM(jsonTree);
+    ensenso_ptr->initExtrinsicCalibration (14);
+  }
+
+}
 
 void callback (const PointCloudT::Ptr& cloud, \
           const boost::shared_ptr<PairOfImages>& images)
@@ -224,14 +298,30 @@ void callback (const PointCloudT::Ptr& cloud, \
 
   sensor_msgs::ImagePtr msg, left_msg, right_msg;
   imagetoMsg(images, msg, left_msg, right_msg);
+/*
+  //get camera infos
+  if(!getCameraInfo("Left", left_info))
+    ROS_INFO("could not get left camera params");
+  if(!getCameraInfo("Right", right_info))
+    ROS_INFO("could not get right camera params");
+  left_info.header.frame_id = "left_camera_info";
+  left_info.header.stamp = ros::Time::now();
+  right_info.header.frame_id = "right_camera_info";
+  right_info.header.stamp = ros::Time::now();*/
+
 
   ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
 
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
   imagePub.publish(msg);  
+
   leftImagePub.publish(left_msg);
   rightImagePub.publish(right_msg);
+/*
+  //pub cam infos
+  leftInfoPub.publish(left_info);
+  rightInfoPub.publish(right_info);*/
 }
 
 int main (int argc, char** argv)
@@ -243,6 +333,8 @@ int main (int argc, char** argv)
   initPublishers();
 
   initEnsensoParams();
+
+  getTransformationMatrix();
 
   //ensenso_ptr->initExtrinsicCalibration (5); // Disable projector if you want good looking images.
   boost::function<void(const PointCloudT::Ptr&, const boost::shared_ptr<PairOfImages>&)> f \

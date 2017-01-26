@@ -57,6 +57,21 @@ using PointCloudTVFH308Ptr = PointCloudVFH308::Ptr;
 #define OUT(__o__) std::cout<< __o__ << std::endl;
 
 
+// void getTransformationMatrix()
+// {
+//   if(!initCaptureParams)
+//   {
+//     ROS_WARN("Camera not initialized");
+//   }
+//   else
+//   {
+//     std::string jsonTree = ensenso_ptr->getResultAsJson();
+//     ROS_INFO_STREAM(jsonTree);
+//     ensenso_ptr->initExtrinsicCalibration (14);
+//   }
+
+// }
+
 class objectPoseEstim; //class forward declaration
 
 class Segmentation
