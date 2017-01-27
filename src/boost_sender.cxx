@@ -19,8 +19,8 @@ sender::sender(boost::asio::io_service& io_service,
     timer_(io_service), pose(pose_info)
 {
   os << std::fixed << std::setfill ('0') << std::setprecision (6) << 
-        pose.stamp << "," << pose.seq << "," << pose.x << "," <<  
-        pose.y << "," << pose.z <<  "," <<  pose.pitch << "," << 
+        pose.stamp << ", " << pose.seq << ", " << pose.x << ", " <<  
+        pose.y << ", " << pose.z <<  ", " <<  pose.pitch << ", " << 
         pose.yaw;
 
   message_ = os.str();
@@ -49,8 +49,8 @@ void sender::handle_timeout(const boost::system::error_code& error)
     std::ostringstream os;
 
     os << std::fixed << std::setfill ('0') << std::setprecision (6) << 
-          pose.stamp << "," << pose.seq << "," << pose.x << "," <<  
-          pose.y << "," << pose.z <<  "," <<  pose.pitch << "," << 
+          pose.stamp << ", " << pose.seq << ", " << pose.x << ", " <<  
+          pose.y << ", " << pose.z <<  ", " <<  pose.pitch << ", " << 
           pose.yaw;
 
     message_ = os.str();
