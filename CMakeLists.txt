@@ -45,7 +45,8 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Ensenso)
-find_package(Boost COMPONENTS filesystem system REQUIRED)
+find_package(Boost COMPONENTS filesystem system serialization
+thread REQUIRED)
 find_package(MySQL REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -96,6 +97,7 @@ if(ENSENSO_FOUND)
 
   set(seg_files src/ensenso_segmentation.cxx
                 src/pathfinder.cxx 
+                src/boost_sender.cxx
                 src/factory_functions.cxx)                      
 
   #add correspondence grouping library

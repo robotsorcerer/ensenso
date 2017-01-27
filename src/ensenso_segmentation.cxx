@@ -10,7 +10,7 @@
 #include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <ensenso/HeadPose.h> //local msg communicator of 5-d pose
+#include <ensenso/boost_sender.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_hull.h>
@@ -42,6 +42,7 @@
 // }
 
 class objectPoseEstim; //class forward declaration
+class sender; //class forward declaration of boost broadcaster
 
 class Segmentation
 {
@@ -105,12 +106,16 @@ private:
 
 	ros::Publisher posePublisher;
 	uint64_t counter;
+
+	boost::asio::io_service io_service;
+	const std::string multicast_address;
 public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
 	cloudName("Segmentation Cloud"), savepcd(false),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
-	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0)
+	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
+	multicast_address("235.255.0.1")
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
 	}
@@ -634,7 +639,7 @@ public:
 
 			// PointCloudT radius   			
 			passThrough(*faces, passThruCloud);
-			outlierRemoval(facesOnly, outlierRemCloud);
+			outlierRemoval(faces, outlierRemCloud);
 
 			headPose = getHeadPose(facesOnly);
 
@@ -683,17 +688,19 @@ public:
 				  multiViewer->updatePointCloud(outlierRemCloud, "Outlier Removed Cloud");
 
 				  if(print){
-				  ROS_INFO("trimmedg cloud has %lu points", passThruCloud->points.size());
+				  ROS_INFO("trimmed cloud has %lu points", passThruCloud->points.size());
 				  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
 				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
 				  }
 
 				  headPose = getHeadPose(facesOnly);
+				  //broadcast the pose to the network
+				  udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
 				}	 
 				if(savepcd)
 				{
 					savepcd = false;
-					saveAllClouds(segCloud, faces, passThruCloud, this->pillows);
+					saveAllClouds(segCloud, faces, facesOnly, outlierRemCloud);
 				}   				
 				multiViewer->spinOnce(1);
 			}

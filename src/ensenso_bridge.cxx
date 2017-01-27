@@ -121,7 +121,7 @@ void initCaptureParams()
   const bool projector = true;
   const int target_brightness = 80;
   const std::string trigger_mode = "Software";    //this is flex mode
-  const bool use_disparity_map_area_of_interest = true;  //reduce area of interest to aid faster transfer times
+  const bool use_disparity_map_area_of_interest = false;  //reduce area of interest to aid faster transfer times
   
   if(!ensenso_ptr->configureCapture ( auto_exposure,
                      auto_gain,

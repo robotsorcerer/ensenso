@@ -64,3 +64,5 @@ namespace generic
   void savefaces(const pcl::PointCloud<pcl::PointXYZ>::Ptr faces);
   void savepoints(Eigen::Vector4d &centroid);
 }
+
+class sender;
