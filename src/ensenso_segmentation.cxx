@@ -4,12 +4,12 @@
 #include <memory>
 #include <fstream>
 #include <ros/spinner.h>
+#include <sensor_msgs/PointCloud2.h>
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
 #include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
-#include <sensor_msgs/PointCloud2.h>
 #include <ensenso/boost_sender.h>
 
 #include <pcl/filters/voxel_grid.h>
@@ -25,21 +25,6 @@
 
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/statistical_outlier_removal.h>
-
-// void getTransformationMatrix()
-// {
-//   if(!initCaptureParams)
-//   {
-//     ROS_WARN("Camera not initialized");
-//   }
-//   else
-//   {
-//     std::string jsonTree = ensenso_ptr->getResultAsJson();
-//     ROS_INFO_STREAM(jsonTree);
-//     ensenso_ptr->initExtrinsicCalibration (14);
-//   }
-
-// }
 
 class objectPoseEstim; //class forward declaration
 class sender; //class forward declaration of boost broadcaster
@@ -177,10 +162,9 @@ public:
 
 		// Objects for storing the point clouds.
 		initPointers();
-		bgdCentroid << 0.0, 0.0, distThreshold, 1.0;//getBackGroundCentroid();	
+		bgdCentroid << 0.0, 0.0, distThreshold, 1.0;
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
-	    // threads.push_back(std::thread(&Segmentation::cloudDisp, this));
 	    std::for_each(threads.begin(), threads.end(), \
 	                  std::mem_fn(&std::thread::join)); 
 	}
@@ -202,15 +186,15 @@ public:
 		//top right
 		multiViewer->createViewPort(0.5, 0.5, 1.0, 1.0, v2);
 		multiViewer->setBackgroundColor (0.3, 0.3, 0.3, v2);
-		multiViewer->addText("Segmented Cloud", 10, 10, "v2 text", v2);
+		multiViewer->addText("Downsampled Cloud", 10, 10, "v2 text", v2);
 		//bottom-left
 		multiViewer->createViewPort(0.0, 0.0, 0.5, 0.5, v3);
 		multiViewer->setBackgroundColor (0.2, 0.2, 0.3, v3);
-		multiViewer->addText("EC Filtered Cloud", 10, 10, "v3 text", v3);
+		multiViewer->addText("Segmented Cloud", 10, 10, "v3 text", v3);
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
-		multiViewer->addText("Outlier Removed Cloud", 10, 10, "v4 text", v4);
+		multiViewer->addText("Segmented Face", 10, 10, "v4 text", v4);
 
 		multiViewer->registerKeyboardCallback(&Segmentation::keyboardEventOccurred, *this);
 	}
@@ -245,30 +229,6 @@ public:
 		pcl::fromPCLPointCloud2(pcl_pc, pcl_cloud);
 	}
 
-	void passThrough(const PointCloudT& cloud, PointCloudTPtr passThruCloud) const
-	{
-		//create the filter object and assign it to cloud
-		pcl::PassThrough<PointT> filter;
-		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
-		filter.setInputCloud(temp_cloud);
-
-		filter.setFilterFieldName("y");
-		filter.setFilterLimits(0, 2);
-		filter.filter(*passThruCloud);
-	}
-
-	void outlierRemoval(const PointCloudTPtr cloud_in, PointCloudTPtr cloud_out) const
-	{
-		pcl::RadiusOutlierRemoval<PointT> rorfilter (true); // Initializing with true will allow us to extract the removed indices
-		rorfilter.setInputCloud (cloud_in);
-		rorfilter.setRadiusSearch (0.8);
-		rorfilter.setMinNeighborsInRadius (15);
-		// rorfilter.setNegative (true);
-		rorfilter.filter (*cloud_out);
-		// The resulting cloud_out contains all points of cloud_in that have 4 or less neighbors within the 0.1 search radius
-		// indices_rem = rorfilter.getRemovedIndices ();
-		// The indices_rem array indexes all points of cloud_in that have 5 or more neighbors within the 0.1 search radius
-	}
 
 	void saveAllClouds(const PointCloudTPtr segCloud, 
 					   const PointCloudTPtr faces, 
@@ -297,118 +257,6 @@ public:
 
 		ROS_INFO_STREAM("saving complete!");
 		++counter;
-	}
-
-	/*Here I used Euclidean clustering to get the clouds of the base pillow which happens to be
-	the largest cluster in the scene*/
-	void getBackGroundCluster() const
-	{	
-		// boost::filesystem::path imagesPath, cloudsPath;
-		// pathfinder::cloudsAndImagesPath(imagesPath, cloudsPath);
-
-		pcl::io::loadPCDFile<PointT>("background_cloud.pcd", *cloud_background);
-		//remove the table from the background so that what we are left with are the pillows
-		PointCloudTPtr filteredCloud(new PointCloudT);
-		PointCloudTPtr pillows(new PointCloudT);
-		PointCloudTPtr cloud_f(new PointCloudT);
-		// Get the plane model, if present.
-		pcl::VoxelGrid<pcl::PointXYZ> vg;
-		vg.setInputCloud(cloud_background);
-		vg.setLeafSize (0.01f, 0.01f, 0.01f);
-		vg.filter (*filteredCloud);
-
-		pcl::SACSegmentation<pcl::PointXYZ> segmentation;
-		pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-		pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-		PointCloudTPtr table(new PointCloudT);
-
-		segmentation.setOptimizeCoefficients (true);
-		segmentation.setModelType(pcl::SACMODEL_PLANE);
-		segmentation.setMethodType(pcl::SAC_RANSAC);
-		segmentation.setMaxIterations (100);
-		segmentation.setDistanceThreshold(0.1);   //height of table from cam center
-
-		int i = 0, nr_points = static_cast<int>(filteredCloud->points.size());
-		for(; filteredCloud->points.size()>0.3*nr_points ;)
-		{
-			segmentation.setInputCloud(filteredCloud);
-			segmentation.segment(*inliers, *coefficients);
-			if(inliers->indices.size() == 0)
-			{
-				OUT("Planar model not found");
-				break;
-			}
-			// Extract the planar inliers from the input cloud
-			pcl::ExtractIndices<pcl::PointXYZ> extract;
-			extract.setInputCloud (filteredCloud);
-			extract.setIndices (inliers);
-			extract.setNegative (false);
-
-			// Get the points associated with the planar surface
-			extract.filter (*table);
-
-			// Remove the planar inliers, extract the rest
-			extract.setNegative (true);
-			extract.filter (*cloud_f);
-			*filteredCloud = *cloud_f;
-		}
-
-		// Creating the KdTree object for the search method of the extraction
-		pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
-		tree->setInputCloud (filteredCloud);
-
-		std::vector<pcl::PointIndices> cluster_indices;
-		pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-		ec.setClusterTolerance (0.02); // 2cm
-		ec.setMinClusterSize (50);
-		ec.setMaxClusterSize (2500);
-		ec.setSearchMethod (tree);
-		ec.setInputCloud (filteredCloud);
-		ec.extract (cluster_indices);
-
-		int j = 0;
-		std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr > clustersVec;
-		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
-		{
-		  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
-		  for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
-		    cloud_cluster->points.push_back (filteredCloud->points[*pit]); //*
-		  cloud_cluster->width = cloud_cluster->points.size ();
-		  cloud_cluster->height = 1;
-		  cloud_cluster->is_dense = true;
-		  if(print)
-		  	std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;		  //my additions
-		  clustersVec.push_back(cloud_cluster);
-		  j++;
-		}
-		//find the cluster with the max size and pass it to this->pillows
-		auto max = clustersVec[0]->points.size();
-		pcl::PointCloud<pcl::PointXYZ>::Ptr biggestCluster (new pcl::PointCloud<pcl::PointXYZ>);
-		for(auto x : clustersVec)
-		{
-		  if(max <= x->points.size() ) 
-		    {
-		      max = x->points.size();
-		      biggestCluster = x;
-		    }
-		}
-		std::cout << "biggest Cluster has " << biggestCluster->points.size () << " data points." << std::endl;
-
-		this->pillows = biggestCluster;
-	}
-
-	Eigen::Vector4d getBackGroundCentroid() const
-	{
-		//get the centroids of the resulting clusters
-		PointCloudTPtr pillows (new PointCloudT);
-		getBackGroundCluster();
-		pillows = this->pillows;
-
-		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
-		Eigen::Vector4d centroid;
-		compute3DCentroid (*pillows, centroid);
-
-		return centroid;
 	}
 
 	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
@@ -482,39 +330,16 @@ public:
 		pose.z = headHeight(2)*1000;
 		pose.pitch = polar;
 		pose.yaw = azimuth;
+		//convert the angles to degrees
+		generic::rad2deg(pose.pitch);
+		generic::rad2deg(pose.yaw);
+		//negate x for convenience
+		// pose.x = -pose.x;
 
 		posePublisher = nh_.advertise<ensenso::HeadPose>("/mannequine_head/pose", 1000);
 		posePublisher.publish(pose);
 
 		return pose;
-	}
-
-	void cloudDisp() 
-	{
-	  const PointCloudT& cloud  = this->cloud;    
-	  PointCloudT::ConstPtr cloud_ptr;	  
-	  // PointCloudT::ConstPtr cloud_ptr(new PointCloudT::ConstPtr);
-	  // *cloud_ptr = this->cloud;
-	  cloud_ptr = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ> >(&this->cloud);
-	  
-	  pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 255, 255);	
-	  viz = boost::shared_ptr<visualizer> (new visualizer());
-
-	  viewer= viz->createViewer();    
-	  viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
-
-	  for(; running && ros::ok() ;)
-	  {
-	    //populate the cloud viewer and prepare for publishing
-	    if(updateCloud)
-	    {   
-	      std::lock_guard<std::mutex> lock(mutex); 
-	      updateCloud = false;
-	      viewer->updatePointCloud(cloud_ptr, cloudName);
-	    }	    
-	    viewer->spinOnce(10);
-	  }
-	  viewer->close();
 	}
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -581,8 +406,7 @@ public:
 		seg.setMaxIterations(60);
 		seg.setModelType (pcl::SACMODEL_PLANE); 
 		seg.setMethodType (pcl::SAC_RANSAC);
-		/*set the distance to the model threshold to use*/
-		getBackGroundCentroid();  //retrieve pillows
+		/*set the distance to the model threshold to use*/		
 		// Get the plane model, if present.		
 		seg.setDistanceThreshold (distThreshold);	//as measured
 		{
@@ -637,22 +461,17 @@ public:
 			extract.setIndices(largestIndices);
 			extract.filter(*facesOnly);
 
-			// PointCloudT radius   			
-			passThrough(*faces, passThruCloud);
-			outlierRemoval(faces, outlierRemCloud);
-
 			headPose = getHeadPose(facesOnly);
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
-			multiViewer->addPointCloud(faces, "Segmented Cloud", v2);
-			multiViewer->addPointCloud(facesOnly, "EC Filtered Cloud", v3);
-
-			multiViewer->addPointCloud(outlierRemCloud, "Outlier Removed Cloud", v4);
+			multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
+			multiViewer->addPointCloud(faces, "Segmented Cloud", v3);
+			multiViewer->addPointCloud(facesOnly, "Segmented Face", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "EC Filtered Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Outlier Removed Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
 
 			while (running && ros::ok())
 			{
@@ -674,21 +493,16 @@ public:
 				  // Get and show all points retrieved by the hull.
 				  extract.setIndices(faceIndices);
 				  extract.filter(*faces);				  
-				  multiViewer->updatePointCloud(faces, "Segmented Cloud");
+				  multiViewer->updatePointCloud(filteredSegCloud, "Downsampled Cloud");
 
 				  getLargestCluster(faces, largestIndices);
 				  extract.setIndices(largestIndices);
 				  extract.filter(*facesOnly);
 
-				  //filter segmented faces
-				  passThrough(*faces, passThruCloud);
-				  multiViewer->updatePointCloud(facesOnly, "EC Filtered Cloud");
-
-				  outlierRemoval(faces, outlierRemCloud);
-				  multiViewer->updatePointCloud(outlierRemCloud, "Outlier Removed Cloud");
+				  multiViewer->updatePointCloud(faces, "Segmented Cloud");
+				  multiViewer->updatePointCloud(facesOnly, "Segmented Face");
 
 				  if(print){
-				  ROS_INFO("trimmed cloud has %lu points", passThruCloud->points.size());
 				  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
 				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
 				  }

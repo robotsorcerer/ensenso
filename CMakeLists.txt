@@ -89,7 +89,8 @@ if(ENSENSO_FOUND)
   add_definitions(${PCL_DEFINITIONS})
 
   ## Declare executable source files
-  set(bridge_files src/ensenso_bridge.cxx)
+  set(bridge_files src/ensenso_bridge.cxx
+                  src/pathfinder.cxx)
 
   set(viewer_files src/ensenso_viewer.cxx 
                    src/factory_functions.cxx

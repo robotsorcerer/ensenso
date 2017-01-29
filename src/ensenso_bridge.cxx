@@ -25,6 +25,7 @@
 *  Author: Olalekan P. Ogunmolu
 */
 #include <memory>
+#include <fstream>
 #include <algorithm>
 
 #include <sensor_msgs/Image.h>
@@ -105,23 +106,24 @@ image_transport::Publisher imagePub, leftImagePub, rightImagePub;
 ros::Publisher leftInfoPub, rightInfoPub;
 std::string encoding = "mono8";
 bool filter = true;
+NxLibItem camera_;
 
 void initCaptureParams()
 {
-  const bool auto_exposure = true;
-  const bool auto_gain = true;
+  const bool auto_exposure = false;
+  const bool auto_gain = false;
   const int bining = 1; //Max. fps (3D): 10 (2x Binning: 30) and 64 disparity levels
-  const float exposure = 0.32;
+  const float exposure = 7.1697756185335138;//0.32;
   const bool front_light = false;
   const int gain = 1;
   const bool gain_boost = false;
   const bool hardware_gamma = false;
   const bool hdr = false;
-  const int pixel_clock = 10;
+  const int pixel_clock = 24;
   const bool projector = true;
   const int target_brightness = 80;
   const std::string trigger_mode = "Software";    //this is flex mode
-  const bool use_disparity_map_area_of_interest = false;  //reduce area of interest to aid faster transfer times
+  const bool use_disparity_map_area_of_interest = true;  //reduce area of interest to aid faster transfer times
   
   if(!ensenso_ptr->configureCapture ( auto_exposure,
                      auto_gain,
@@ -158,14 +160,62 @@ void initPublishers()
   rightInfoPub = nh.advertise<sensor_msgs::CameraInfo>("/ensenso/right/cam/info", 2);
 }
 
+void readAndLoadParams()
+{
+  boost::filesystem::path data_dir, settingsPath;
+  pathfinder::getDataDirectory(data_dir);
+
+  settingsPath = data_dir / "settings_face_filled.json";
+  std::string settingsFile = settingsPath.string();
+
+  ROS_INFO_STREAM("Loading settings file: " << settingsFile);
+  std::ifstream file("/home/robotec/catkin_ws/src/ensenso/data/settings_face_filled.json");
+
+
+  if (file.is_open() && file.rdbuf()) 
+  {
+     // You can use the std::stringstream class to read a textfile:
+     std::stringstream buffer;
+     buffer << file.rdbuf();
+     std::string const& fileContent = buffer.str();
+
+     // ROS_INFO_STREAM("file contents \n"  << fileContent);
+
+     NxLibItem tmp("/tmp");
+     tmp.setJson(fileContent); 
+     if (tmp[itmParameters].exists()) 
+     {
+        camera_[itmParameters].setJson(tmp[itmParameters].asJson(), true); 
+        // writeableNodesOnly = true silently skips 
+        // read-only nodes instead of failing when 
+        // encountering a read-only node
+        ROS_INFO("Successfully read camera settings file");
+     } 
+     else 
+     {
+        camera_[itmParameters].setJson(tmp.asJson(), true); // with writebleNodesOnly = true, see comment above
+     }
+     // ROS_INFO_STREAM("camera_[itmParameters] \n" << 
+     //                  camera_[itmParameters].setJson(tmp.asJson(), true));
+  } 
+  else 
+  {
+     ROS_INFO("Could not parse json params file");
+  }
+
+}
+
 bool initEnsensoParams()
 {
   ROS_INFO("%s", "Initializing ensenso camera parameters");  
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort();
   ensenso_ptr->openDevice();
-  ensenso_ptr->enumDevices();  
-  initCaptureParams();
+  ensenso_ptr->enumDevices();    
+  camera_ = ensenso_ptr->camera_;
+  ensenso_ptr->configureCapture();
+  ROS_INFO("Loading json params");
+  readAndLoadParams();
   return true;
 }
 
@@ -215,6 +265,7 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   right_header.stamp = ros::Time::now();
   right_msg = cv_bridge::CvImage(right_header, encoding, right_image).toImageMsg();
 }
+
 void ensensoExceptionHandling (const NxLibException &ex,
                  std::string func_nam)
 {
@@ -230,7 +281,7 @@ void ensensoExceptionHandling (const NxLibException &ex,
 bool getCameraInfo(std::string cam, sensor_msgs::CameraInfo &cam_info)
 {
   pcl::EnsensoGrabber grabber;
-  NxLibItem camera_ = grabber.camera_;
+  camera_ = grabber.camera_;
   try
   {
     cam_info.width = camera_[itmSensor][itmSize][0].asInt();
@@ -271,21 +322,6 @@ bool getCameraInfo(std::string cam, sensor_msgs::CameraInfo &cam_info)
     ensensoExceptionHandling (ex, "getCameraInfo");
     return false;
   }
-}
-
-void getTransformationMatrix()
-{
-  if(!initCaptureParams)
-  {
-    ROS_WARN("Camera not initialized");
-  }
-  else
-  {
-    std::string jsonTree = ensenso_ptr->getResultAsJson();
-    ROS_INFO_STREAM(jsonTree);
-    ensenso_ptr->initExtrinsicCalibration (14);
-  }
-
 }
 
 void callback (const PointCloudT::Ptr& cloud, \
@@ -334,15 +370,12 @@ int main (int argc, char** argv)
 
   initEnsensoParams();
 
-  getTransformationMatrix();
-
-  //ensenso_ptr->initExtrinsicCalibration (5); // Disable projector if you want good looking images.
   boost::function<void(const PointCloudT::Ptr&, const boost::shared_ptr<PairOfImages>&)> f \
                                 = boost::bind(&callback, _1, _2);
 
   ensenso_ptr->start ();
 
-  ros::Rate rate(5);
+  ros::Rate rate(30);
   while(ros::ok())
   {    
     ensenso_ptr->registerCallback (f);
