@@ -102,7 +102,7 @@ if(ENSENSO_FOUND)
                 src/factory_functions.cxx)                      
 
   #add correspondence grouping library
-  # add_library(ensenso_grouping src/ensenso_correspondence.cxx)
+  add_library(savgol src/savgol.cxx)
 
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
@@ -118,9 +118,16 @@ if(ENSENSO_FOUND)
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
 
+  install(TARGETS savgol
+          ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
+
+  install(DIRECTORY include/${PROJECT_NAME}/
+          DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 
   target_link_libraries(ensenso_seg
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} savgol
   )
 
   # target_link_libraries(ensenso_grouping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})

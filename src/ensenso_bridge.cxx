@@ -375,7 +375,7 @@ int main (int argc, char** argv)
 
   ensenso_ptr->start ();
 
-  ros::Rate rate(30);
+  ros::Rate rate(100);
   while(ros::ok())
   {    
     ensenso_ptr->registerCallback (f);

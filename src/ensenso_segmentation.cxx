@@ -8,6 +8,7 @@
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
+#include <ensenso/savgol.h>
 #include <ensenso/camera_matrices.h>
 #include <ensenso/ensenso_headers.h>
 #include <ensenso/boost_sender.h>
@@ -91,6 +92,9 @@ private:
 
 	ros::Publisher posePublisher;
 	uint64_t counter;
+	std::vector<double> xfilt, yfilt, 
+						zfilt, pitchfilt,
+						yawfilt;
 
 	boost::asio::io_service io_service;
 	const std::string multicast_address;
@@ -190,7 +194,7 @@ public:
 		//bottom-left
 		multiViewer->createViewPort(0.0, 0.0, 0.5, 0.5, v3);
 		multiViewer->setBackgroundColor (0.2, 0.2, 0.3, v3);
-		multiViewer->addText("Segmented Cloud", 10, 10, "v3 text", v3);
+		multiViewer->addText("Convex Hull", 10, 10, "v3 text", v3);
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
@@ -325,9 +329,27 @@ public:
 		pose.stamp = ros::Time::now();
 		pose.seq   = ++counter;
 		//convert from meters to mm
-		pose.x = headHeight(0)*1000;
-		pose.y = headHeight(1)*1000;
-		pose.z = headHeight(2)*1000;
+		headHeight*=1000;
+/*		//filter the 5-dof pose with my savgol impl
+		// xfilt, yfilt, zfilt, polarfilt, yawfilt
+		xfilt.push_back(headHeight(0));
+		yfilt.push_back(headHeight(1));
+		zfilt.push_back(headHeight(2));
+		pitchfilt.push_back(generic::rad2deg(polar));
+		yawfilt.push_back(generic::rad2deg(azimuth));
+
+		if(counter%5==0)
+		{
+			savgolfilt(xfilt, 3, 5);
+			savgolfilt(yfilt, 3, 5);
+			savgolfilt(zfilt, 3, 5);
+			savgolfilt(pitchfilt, 3, 5);
+			savgolfilt(yawfilt, 3, 5);
+		}*/
+
+		pose.x = headHeight(0);
+		pose.y = headHeight(1);
+		pose.z = headHeight(2);
 		pose.pitch = polar;
 		pose.yaw = azimuth;
 		//convert the angles to degrees
@@ -465,12 +487,12 @@ public:
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
-			multiViewer->addPointCloud(faces, "Segmented Cloud", v3);
+			multiViewer->addPointCloud(convexHull, "Convex Hull", v3);
 			multiViewer->addPointCloud(facesOnly, "Segmented Face", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Cloud");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Convex Hull");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
 
 			while (running && ros::ok())
@@ -499,7 +521,7 @@ public:
 				  extract.setIndices(largestIndices);
 				  extract.filter(*facesOnly);
 
-				  multiViewer->updatePointCloud(faces, "Segmented Cloud");
+				  multiViewer->updatePointCloud(convexHull, "Convex Hull");
 				  multiViewer->updatePointCloud(facesOnly, "Segmented Face");
 
 				  if(print){
