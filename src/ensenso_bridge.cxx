@@ -334,16 +334,6 @@ void callback (const PointCloudT::Ptr& cloud, \
 
   sensor_msgs::ImagePtr msg, left_msg, right_msg;
   imagetoMsg(images, msg, left_msg, right_msg);
-/*
-  //get camera infos
-  if(!getCameraInfo("Left", left_info))
-    ROS_INFO("could not get left camera params");
-  if(!getCameraInfo("Right", right_info))
-    ROS_INFO("could not get right camera params");
-  left_info.header.frame_id = "left_camera_info";
-  left_info.header.stamp = ros::Time::now();
-  right_info.header.frame_id = "right_camera_info";
-  right_info.header.stamp = ros::Time::now();*/
 
 
   ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
@@ -354,10 +344,6 @@ void callback (const PointCloudT::Ptr& cloud, \
 
   leftImagePub.publish(left_msg);
   rightImagePub.publish(right_msg);
-/*
-  //pub cam infos
-  leftInfoPub.publish(left_info);
-  rightInfoPub.publish(right_info);*/
 }
 
 int main (int argc, char** argv)
@@ -374,14 +360,9 @@ int main (int argc, char** argv)
                                 = boost::bind(&callback, _1, _2);
 
   ensenso_ptr->start ();
-
-  ros::Rate rate(100);
-  while(ros::ok())
-  {    
-    ensenso_ptr->registerCallback (f);
-    ros::spin();
-    rate.sleep();
-  }
+  ensenso_ptr->registerCallback (f);
+  
+  ros::spin();
 
   ensenso_ptr->stop ();
   ensenso_ptr->closeDevice ();
