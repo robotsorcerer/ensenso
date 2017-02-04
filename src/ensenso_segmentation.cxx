@@ -194,7 +194,7 @@ public:
 		//bottom-left
 		multiViewer->createViewPort(0.0, 0.0, 0.5, 0.5, v3);
 		multiViewer->setBackgroundColor (0.2, 0.2, 0.3, v3);
-		multiViewer->addText("Convex Hull", 10, 10, "v3 text", v3);
+		multiViewer->addText("Possible faces", 10, 10, "v3 text", v3);
 		//bottom-right
 		multiViewer->createViewPort(0.5, 0.0, 1.0, 0.5, v4);
 		multiViewer->setBackgroundColor (0.2, 0.3, 0.2, v4);
@@ -487,12 +487,12 @@ public:
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
-			multiViewer->addPointCloud(convexHull, "Convex Hull", v3);
+			multiViewer->addPointCloud(faces, "Possible faces", v3);
 			multiViewer->addPointCloud(facesOnly, "Segmented Face", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Convex Hull");
+			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Possible faces");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
 
 			while (running && ros::ok())
@@ -521,7 +521,7 @@ public:
 				  extract.setIndices(largestIndices);
 				  extract.filter(*facesOnly);
 
-				  multiViewer->updatePointCloud(convexHull, "Convex Hull");
+				  multiViewer->updatePointCloud(faces, "Possible faces");
 				  multiViewer->updatePointCloud(facesOnly, "Segmented Face");
 
 				  if(print){

@@ -106,6 +106,7 @@ image_transport::Publisher imagePub, leftImagePub, rightImagePub;
 ros::Publisher leftInfoPub, rightInfoPub;
 std::string encoding = "mono8";
 bool filter = true;
+bool print;
 NxLibItem camera_;
 
 void initCaptureParams()
@@ -335,8 +336,8 @@ void callback (const PointCloudT::Ptr& cloud, \
   sensor_msgs::ImagePtr msg, left_msg, right_msg;
   imagetoMsg(images, msg, left_msg, right_msg);
 
-
-  ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
+  if(print)
+    ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
 
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
@@ -351,6 +352,9 @@ int main (int argc, char** argv)
   ros::init(argc, argv, "ensensor_bridge_node"); 
   ros::start();
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
+
+  if(argv[1] == "-p")
+    print = true;
 
   initPublishers();
 
