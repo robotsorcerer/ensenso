@@ -6,7 +6,7 @@
 
 namespace pathfinder
 {
-	static bool getROSPackagePath(const std::string pkgName, boost::filesystem::path & pkgPath)
+	bool getROSPackagePath(const std::string pkgName, boost::filesystem::path & pkgPath)
 	{
 	    pkgPath = ros::package::getPath(pkgName);
 	    if (pkgPath.empty())

@@ -60,10 +60,7 @@ DEPENDENCIES
 std_msgs
 )
 
-catkin_package(
-  INCLUDE_DIRS include
-   CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs tf  tf_conversions
-)
+#
 
 ###########
 ## Build ##
@@ -72,10 +69,13 @@ catkin_package(
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 include_directories(
   ${Boost_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
   ${ensenso_INCLUDE_DIRS}
   ${MYSQL_INCLUDE_DIRECTORIES}
 )
+
+add_definitions(${EIGEN_DEFINITIONS})
 
 message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
 
@@ -103,6 +103,14 @@ if(ENSENSO_FOUND)
 
   #add correspondence grouping library
   add_library(savgol src/savgol.cxx)
+  add_library(pathfinder src/pathfinder.cxx)
+  add_library(boostsender src/boost_sender.cxx)
+
+  catkin_package(
+    INCLUDE_DIRS include
+     CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs tf  tf_conversions
+     LIBRARIES pathfinder savgol boostsender
+  )
 
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
@@ -114,11 +122,15 @@ if(ENSENSO_FOUND)
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} 
   )
 
-  target_link_libraries(ensenso_viewer
+  target_link_libraries(ensenso_viewer 
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
 
-  install(TARGETS savgol
+  target_link_libraries(pathfinder boostsender
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+    )
+
+  install(TARGETS savgol pathfinder boostsender
           ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
           LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
           RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})

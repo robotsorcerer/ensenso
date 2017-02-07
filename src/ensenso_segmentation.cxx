@@ -34,7 +34,7 @@ class Segmentation
 {
 private:	
 	friend class objectPoseEstim; //friend class forward declaration
-	bool updateCloud, save, running, print, savepcd;
+	bool updateCloud, save, running, print, savepcd, send;
 	ros::NodeHandle nh_;
 	std::ostringstream oss;
  	const std::string cloudName;
@@ -101,9 +101,9 @@ private:
 public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
-	cloudName("Segmentation Cloud"), savepcd(false),
-	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), zmin(0.2f), zmax(0.4953f),
-	v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
+	send(false), cloudName("Segmentation Cloud"), savepcd(false),
+	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), 
+	zmin(0.2f), zmax(0.4953f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
 	multicast_address("235.255.0.1")
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
@@ -531,7 +531,8 @@ public:
 
 				  headPose = getHeadPose(facesOnly);
 				  //broadcast the pose to the network
-				  udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
+				  if(send)
+				    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
 				}	 
 				if(savepcd)
 				{
