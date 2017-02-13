@@ -34,7 +34,7 @@ class Segmentation
 {
 private:	
 	friend class objectPoseEstim; //friend class forward declaration
-	bool updateCloud, save, running, print, savepcd, send;
+	bool updateCloud, save, running, print, savepcd, send, firstFace;
 	ros::NodeHandle nh_;
 	std::ostringstream oss;
  	const std::string cloudName;
@@ -101,7 +101,7 @@ private:
 public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
-	send(false), cloudName("Segmentation Cloud"), savepcd(false),
+	send(false), cloudName("Segmentation Cloud"), savepcd(false), firstFace(true),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), 
 	zmin(0.2f), zmax(0.4953f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
 	multicast_address("235.255.0.1")
@@ -166,7 +166,7 @@ public:
 
 		// Objects for storing the point clouds.
 		initPointers();
-		bgdCentroid << 0.0, 0.0, distThreshold, 1.0;
+		// bgdCentroid << 0.142705, -0.0446529, 0.521699, 1.0;
 		//spawn the threads
 	    threads.push_back(std::thread(&Segmentation::planeSeg, this));
 	    std::for_each(threads.begin(), threads.end(), \
@@ -269,8 +269,11 @@ public:
 		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
 		Eigen::Vector4d headCentroid, headHeight;
 		compute3DCentroid (*headNow, headCentroid);
+		//pick position of head at rest
+		if(firstFace) bgdCentroid = headCentroid;
 		//now subtract the height of camera above table from computed centroid
 		headHeight = bgdCentroid - headCentroid;
+		firstFace = false;
 		headHeight(3) = 1;  		//to allow for rotation
 
 		if(save)
@@ -281,8 +284,9 @@ public:
 
 	    if(print)
 	    {
-		    ROS_INFO("HeadHeight [x: %f, y: %f, z: %f ]", headHeight(0), headHeight(1), headHeight(2) );
-		    ROS_INFO("HeadCentroids [x: %f, y: %f, z: %f ]", headCentroid(0), headCentroid(1), headCentroid(2) );
+	    	ROS_INFO_STREAM("HeadHeight " << headHeight.transpose()*1000);
+		    ROS_INFO_STREAM("bgdCentroid " << bgdCentroid.transpose() );
+		    ROS_INFO_STREAM("HeadCentroids " << headCentroid.transpose() );
 	    }
 
 		/*
@@ -300,8 +304,8 @@ public:
 		auto faceCenter = headHeight.block<3,1>(0,0);
 		auto projectedFace = centralLine.projection(faceCenter);	
 		if(print){			
-			ROS_INFO_STREAM("projected line: \n" << projectedFace);	
-			ROS_INFO_STREAM("head center: \n" << faceCenter);	
+			ROS_INFO_STREAM("projected line: " << projectedFace.transpose());	
+			ROS_INFO_STREAM("head center: " << faceCenter.transpose());	
 			// ROS_INFO_STREAM("parametereized line: " << centralLine);	
 		}											
 		/*
@@ -310,9 +314,9 @@ public:
  		line segment OP on the reference plane 
 		*/
  		// r = sqrt(x^2 + y^2 + z^2)
- 		x    = faceCenter(0) /*- projectedFace(0)*/;
- 		y 	 = faceCenter(1) /*- projectedFace(1)*/;
- 		z 	 = faceCenter(2) /*- projectedFace(2)*/;
+ 		x    = (faceCenter(0) - bgdCentroid(0))*1000;/*- projectedFace(0)*/;
+ 		y 	 = (faceCenter(1) - bgdCentroid(1))*1000;/*- projectedFace(1)*/;
+ 		z 	 = (faceCenter(2) - bgdCentroid(2))*1000;/*- projectedFace(2)*/;
 
  		x_sq = std::pow(x, 2);
  		y_sq = std::pow(y, 2);
@@ -330,33 +334,15 @@ public:
 		pose.seq   = ++counter;
 		//convert from meters to mm
 		headHeight*=1000;
-/*		//filter the 5-dof pose with my savgol impl
-		// xfilt, yfilt, zfilt, polarfilt, yawfilt
-		xfilt.push_back(headHeight(0));
-		yfilt.push_back(headHeight(1));
-		zfilt.push_back(headHeight(2));
-		pitchfilt.push_back(generic::rad2deg(polar));
-		yawfilt.push_back(generic::rad2deg(azimuth));
 
-		if(counter%5==0)
-		{
-			savgolfilt(xfilt, 3, 5);
-			savgolfilt(yfilt, 3, 5);
-			savgolfilt(zfilt, 3, 5);
-			savgolfilt(pitchfilt, 3, 5);
-			savgolfilt(yawfilt, 3, 5);
-		}*/
-
-		pose.x = headHeight(0);
-		pose.y = headHeight(1);
-		pose.z = headHeight(2);
-		pose.pitch = polar;
+		pose.x = std::fabs(headHeight(0));
+		pose.y = std::fabs(headHeight(1));
+		pose.z = std::fabs(headHeight(2));
+		pose.pitch = -polar;  //negate this to make pitch +ve
 		pose.yaw = azimuth;
 		//convert the angles to degrees
 		generic::rad2deg(pose.pitch);
 		generic::rad2deg(pose.yaw);
-		//negate x for convenience
-		// pose.x = -pose.x;
 
 		posePublisher = nh_.advertise<ensenso::HeadPose>("/mannequine_head/pose", 1000);
 		posePublisher.publish(pose);
