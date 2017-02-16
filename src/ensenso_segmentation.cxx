@@ -2,6 +2,7 @@
 #include <cmath>
 #include <thread>
 #include <memory>
+#include <queue>
 #include <fstream>
 #include <ros/spinner.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -57,7 +58,7 @@ private:
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer;
 
 	/*Plane Segmentation Objects*/
-	PointCloudTPtr segCloud, plane, convexHull, faces;
+	PointCloudTPtr segCloud, plane, convexHull, faces, passThroughFaces;
 	//Get Plane Model
 	pcl::ModelCoefficients::Ptr coefficients;
 	//indices of segmented face
@@ -88,7 +89,7 @@ private:
 	x_sq, y_sq, z_sq;  //used to compute spherical coordinates
 	
 	
-	double rad_dist, azimuth, polar; //spherical coords
+	double rad_dist, azimuth, polar, roll; //spherical coords
 
 	ros::Publisher posePublisher;
 	uint64_t counter;
@@ -279,9 +280,6 @@ public:
 		if(save)
 			generic::savepoints(headCentroid);
 
-		//compute the orientation of the segmented cluster about the background
-		Eigen::Vector3d headAngle;
-
 	    if(print)
 	    {
 	    	ROS_INFO_STREAM("HeadHeight " << headHeight.transpose()*1000);
@@ -293,16 +291,17 @@ public:
 		Parametrize a line defined by an origin point o and a unit direction vector d
 		$ such that the line corresponds to the set $ l(t) = o + t * d, $ t \in \mathbf{R} $.
 		*/		
-		Eigen::Vector3d back, projback;
+		Eigen::Vector3d back, projx;
 		// Eigen::ParametrizedLine<double,4> centralLine;
 		back 		<< bgdCentroid(0), bgdCentroid(1), bgdCentroid(2);
-		projback  	= back;
-		projback(2) += 1;  //add a second vector normal to background centroid vexctor
-		Eigen::ParametrizedLine<double,3> centralLine = Eigen::ParametrizedLine<double,\
-														3>::Through(back, projback);
-		/*Compute the projection of the head centroid onto the line*/
 		auto faceCenter = headHeight.block<3,1>(0,0);
-		auto projectedFace = centralLine.projection(faceCenter);	
+		/*Compute the projection of the head centroid onto the line*/
+		projx  	= faceCenter;
+		// projx(0) += 3;  //add a second vector normal to background centroid vexctor
+		Eigen::ParametrizedLine<double,3> faceAlongBgd = Eigen::ParametrizedLine<double,\
+														3>::Through(faceCenter, back);
+		//this is the projection of the face to the x-y plane												
+		auto projectedFace = faceAlongBgd.projection(faceCenter);	
 		if(print){			
 			ROS_INFO_STREAM("projected line: " << projectedFace.transpose());	
 			ROS_INFO_STREAM("head center: " << faceCenter.transpose());	
@@ -313,21 +312,22 @@ public:
  		I use the ISO convention with my azimuth being the signed angle measured from azimuth reference direction to the orthogonal projection of 
  		line segment OP on the reference plane 
 		*/
- 		// r = sqrt(x^2 + y^2 + z^2)
- 		x    = (faceCenter(0) - bgdCentroid(0))*1000;/*- projectedFace(0)*/;
- 		y 	 = (faceCenter(1) - bgdCentroid(1))*1000;/*- projectedFace(1)*/;
- 		z 	 = (faceCenter(2) - bgdCentroid(2))*1000;/*- projectedFace(2)*/;
+ 		x    = std::fabs(faceCenter(0)*1000);
+ 		y 	 = std::fabs(faceCenter(1)*1000);
+ 		z 	 = std::fabs(faceCenter(2)*1000);
 
- 		x_sq = std::pow(x, 2);
- 		y_sq = std::pow(y, 2);
- 		z_sq = std::pow(z, 2);
+ 		x_sq = std::pow(back(0)*1000, 2);
+ 		y_sq = std::pow(back(1)*1000, 2);
+ 		z_sq = std::pow(back(2)*1000, 2);
 
  		//azimuth = yaw rotation about z axis in the counterclockwise direction
  		//polar   = pitch rotation about reference plane in the counterclockwise direction
  		//note that yaw rotation has a secondary effect on roll, the bank angle
-		rad_dist = std::sqrt(x_sq + y_sq + z_sq);
-		azimuth  = std::acos(z/rad_dist);
-		polar    = std::atan(y/x);
+		rad_dist 	= std::sqrt(x_sq + y_sq + z_sq);
+		polar 	  	= M_PI/2 - std::acos(z/rad_dist);
+		//angle between y and projected face will be yaw
+		azimuth    	= M_PI/2 - std::atan2(x, projectedFace(1));  
+		roll 		= std::atan2(x, z);
 
 		ensenso::HeadPose pose;
 		pose.stamp = ros::Time::now();
@@ -335,14 +335,16 @@ public:
 		//convert from meters to mm
 		headHeight*=1000;
 
-		pose.x = std::fabs(headHeight(0));
-		pose.y = std::fabs(headHeight(1));
-		pose.z = std::fabs(headHeight(2));
-		pose.pitch = -polar;  //negate this to make pitch +ve
+		pose.x = x; //std::fabs(x);
+		pose.y = y; //std::fabs(y);
+		pose.z = z; //std::fabs(z);
+		pose.pitch = polar;  //negate this to make pitch +ve
 		pose.yaw = azimuth;
+		pose.roll = roll; //M_PI + polar;
 		//convert the angles to degrees
 		generic::rad2deg(pose.pitch);
 		generic::rad2deg(pose.yaw);
+		generic::rad2deg(pose.roll);
 
 		posePublisher = nh_.advertise<ensenso::HeadPose>("/mannequine_head/pose", 1000);
 		posePublisher.publish(pose);
@@ -359,6 +361,20 @@ public:
 	       event.getPoint(x,y,z);
 	       std::cout << x<< "; " << y<<"; " << z << std::endl;
 	   }
+	}
+
+
+	void passThrough(const PointCloudT& cloud, PointCloudTPtr passThruCloud, 
+					std::string&& field_name, double&& min_limits, double&& max_limits) const
+	{
+		//create the filter object and assign it to cloud
+		pcl::PassThrough<PointT> filter;
+		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
+		filter.setInputCloud(temp_cloud);
+
+		filter.setFilterFieldName(field_name);
+		filter.setFilterLimits(min_limits, max_limits);
+		filter.filter(*passThruCloud);
 	}
 
 	bool getLargestCluster(const PointCloudTPtr cloud, 
@@ -469,12 +485,18 @@ public:
 			extract.setIndices(largestIndices);
 			extract.filter(*facesOnly);
 
-			headPose = getHeadPose(facesOnly);
+			passThrough(*faces, passThruCloud, std::move("x"), 
+							std::move(0), std::move(2));
+
+			// passThrough(*passThruCloud, passThruCloud, std::move("y"), 
+			// 				std::move(0), std::move(1.5));
+
+			headPose = getHeadPose(passThruCloud);
 
 			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
 			multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
 			multiViewer->addPointCloud(faces, "Possible faces", v3);
-			multiViewer->addPointCloud(facesOnly, "Segmented Face", v4);
+			multiViewer->addPointCloud(passThruCloud, "Segmented Face", v4);
 
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
 			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
@@ -507,15 +529,20 @@ public:
 				  extract.setIndices(largestIndices);
 				  extract.filter(*facesOnly);
 
+				  passThrough(*faces, passThruCloud, std::move("x"), 
+				  				std::move(0), std::move(2));
+				  // passThrough(*passThruCloud, passThruCloud, std::move("y"), 
+				  // 				std::move(0), std::move(1.5));
+				  headPose = getHeadPose(passThruCloud);
+
 				  multiViewer->updatePointCloud(faces, "Possible faces");
-				  multiViewer->updatePointCloud(facesOnly, "Segmented Face");
+				  multiViewer->updatePointCloud(passThruCloud, "Segmented Face");
 
 				  if(print){
 				  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
 				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
 				  }
-
-				  headPose = getHeadPose(facesOnly);
+				  
 				  //broadcast the pose to the network
 				  if(send)
 				    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);

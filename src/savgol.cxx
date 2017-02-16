@@ -24,6 +24,7 @@
 #include <Eigen/LU>
 #include <Eigen/Core>
 #include <Eigen/QR>
+#include <queue>
 
 using namespace Eigen;
 using namespace std;
@@ -91,7 +92,8 @@ MatrixXf sgdiff(int k, int F, double Fd)
   return B;
 }
 
-RowVectorXf savgolfilt(VectorXf const & x, int k, int F)
+template<typename T>
+RowVectorXf savgolfilt(std::queue<T> const & x, int k, int F)
 {  
   auto DIM = Matrix4f::Zero();        //initialize DIM as a matrix of zeros if it is not supplied
   auto siz = x.size();       //Reshape depth values by working along the first non-singleton dimension
@@ -119,7 +121,7 @@ RowVectorXf savgolfilt(VectorXf const & x, int k, int F)
     }
     
   //flip x_on up and down as above
-  VectorXf x_onflipped(x.rows(), x.cols());  //pre-allocate
+  VectorXf x_onflipped(x.size(), 1);  //pre-allocate
   x_onflipped.transpose().eval();     
 
   auto m = x.size();                          //retrieve total # coefficients
@@ -177,7 +179,7 @@ RowVectorXf savgolfilt(VectorXf const & x, int k, int F)
     }
   auto y_off = Boff_flipped * x_offflipped;   //This is the transient off
 
-  /*Make Y into the shape of X and retuen the smoothed values!*/
+  /*Make Y into the shape of X and return the smoothed values!*/
   RowVectorXf y(F);
   y << y_off.transpose().eval(), y_ss, y_on.transpose().eval();
 

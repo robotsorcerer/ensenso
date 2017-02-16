@@ -156,6 +156,24 @@ namespace generic{
  		return max;
  	}
 
+ 	Eigen::Vector4d findMaxPoint(pcl::PointCloud<pcl::PointXYZ>::Ptr clouds)
+ 	{
+ 		Eigen::Vector4d searchPoint, maxPoint;
+ 		searchPoint << clouds->points[0].x, clouds->points[0].y,
+ 									clouds->points[0].z, 1.;
+
+ 		for(auto i = 1; i < clouds->points.size(); ++i)
+ 		{
+ 		  if(searchPoint(2) <= clouds->points[i].z ) 
+ 		    {
+ 		      maxPoint(0) = clouds->points[i].x; maxPoint(1) = clouds->points[i].y;
+ 			  maxPoint(2) = clouds->points[i].z; maxPoint(3) = 1.;
+ 		    }
+ 		}
+ 		return maxPoint;
+ 		// std::cout << maxPoint << std::endl;
+ 	}
+
  	//save faces points
  	void savefaces(const pcl::PointCloud<pcl::PointXYZ>::Ptr faces)
  	{
@@ -180,6 +198,19 @@ namespace generic{
  	    midface.close();
  	}
 /*
+ 	void outlierRemoval(const PointCloudTPtr cloud_in, PointCloudTPtr cloud_out) const
+ 	{
+ 		pcl::RadiusOutlierRemoval<PointT> rorfilter (true); // Initializing with true will allow us to extract the removed indices
+ 		rorfilter.setInputCloud (cloud_in);
+ 		rorfilter.setRadiusSearch (0.8);
+ 		rorfilter.setMinNeighborsInRadius (15);
+ 		// rorfilter.setNegative (true);
+ 		rorfilter.filter (*cloud_out);
+ 		// The resulting cloud_out contains all points of cloud_in that have 4 or less neighbors within the 0.1 search radius
+ 		// indices_rem = rorfilter.getRemovedIndices ();
+ 		// The indices_rem array indexes all points of cloud_in that have 5 or more neighbors within the 0.1 search radius
+ 	}
+
 	Eigen::Vector4d getBackGroundCentroid() const
 	{
 		//get the centroids of the resulting clusters
@@ -284,30 +315,7 @@ namespace generic{
 		this->pillows = biggestCluster;
 	}
 
- 	void passThrough(const PointCloudT& cloud, PointCloudTPtr passThruCloud) const
- 	{
- 		//create the filter object and assign it to cloud
- 		pcl::PassThrough<PointT> filter;
- 		PointCloudTPtr temp_cloud (new PointCloudT (cloud));
- 		filter.setInputCloud(temp_cloud);
-
- 		filter.setFilterFieldName("y");
- 		filter.setFilterLimits(0, 2);
- 		filter.filter(*passThruCloud);
- 	}
-
- 	void outlierRemoval(const PointCloudTPtr cloud_in, PointCloudTPtr cloud_out) const
- 	{
- 		pcl::RadiusOutlierRemoval<PointT> rorfilter (true); // Initializing with true will allow us to extract the removed indices
- 		rorfilter.setInputCloud (cloud_in);
- 		rorfilter.setRadiusSearch (0.8);
- 		rorfilter.setMinNeighborsInRadius (15);
- 		// rorfilter.setNegative (true);
- 		rorfilter.filter (*cloud_out);
- 		// The resulting cloud_out contains all points of cloud_in that have 4 or less neighbors within the 0.1 search radius
- 		// indices_rem = rorfilter.getRemovedIndices ();
- 		// The indices_rem array indexes all points of cloud_in that have 5 or more neighbors within the 0.1 search radius
- 	}*/
+*/
 }
 
 

@@ -1,9 +1,10 @@
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <ros/ros.h>
+
 #include <string>
+#include <ros/ros.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 /*
 Without defining boost scoped enums, linking breaks the compilation. 
 See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-filesystem
@@ -16,6 +17,11 @@ See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-fi
 
 #include "tf_conversions/tf_eigen.h"
 #include <tf/tf.h>
+
+
+using PointT      = pcl::PointXYZ;
+using PointCloudT     = pcl::PointCloud<PointT>;
+using PointCloudTPtr  = PointCloudT::Ptr;
 
 //Forward Declarations
 namespace pathfinder
@@ -85,6 +91,8 @@ namespace generic
    */
   double findMax(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds, 
           pcl::PointCloud<pcl::PointXYZ>::Ptr biggestCluster);
+
+  Eigen::Vector4d findMaxPoint(pcl::PointCloud<pcl::PointXYZ>::Ptr clouds);
 }
 
 class sender;

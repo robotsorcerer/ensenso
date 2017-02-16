@@ -139,7 +139,7 @@ if(ENSENSO_FOUND)
           DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 
   target_link_libraries(ensenso_seg
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} savgol
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} ~/catkin_ws/devel/lib/libsavgol.so
   )
 
   # target_link_libraries(ensenso_grouping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})

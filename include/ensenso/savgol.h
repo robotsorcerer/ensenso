@@ -5,6 +5,7 @@
 
 Eigen::MatrixXi vander(const int F);
 Eigen::MatrixXf sgdiff(int k, int F, double Fd);
-Eigen::RowVectorXf savgolfilt(Eigen::VectorXf const & x, Eigen::VectorXf const & x_on, int k, int F, double Fd);
+template<typename T>
+Eigen::RowVectorXf savgolfilt(std::queue<T> const & x, int k, int F);
 
 #endif
