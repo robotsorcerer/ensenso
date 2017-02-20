@@ -6,6 +6,7 @@
 #include <fstream>
 #include <ros/spinner.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <unsupported/Eigen/AlignedVector3>
 
 #include <ensenso/visualizer.h>
 #include <ensenso/pcl_headers.h>
@@ -53,12 +54,14 @@ private:
 	int v1, v2, v3, v4;
  	ros::AsyncSpinner spinner;
  	/*Filtered Cloud and backgrounds*/
- 	PointCloudTPtr filteredCloud, cloud_background;
+ 	PointCloudTPtr filteredCloud, cloud_background, firstCloud,
+ 					firstCloudFeatures, faceFeatures;
  	mutable PointCloudTPtr pillows;   //cause we'll copy indices of pillows to this
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer;
 
 	/*Plane Segmentation Objects*/
-	PointCloudTPtr segCloud, plane, convexHull, faces, passThroughFaces;
+	PointCloudTPtr segCloud, plane, convexHull, faces, 
+					passThroughFaces, firstFaceCloud;
 	//Get Plane Model
 	pcl::ModelCoefficients::Ptr coefficients;
 	//indices of segmented face
@@ -131,10 +134,14 @@ public:
 		filteredCloud 		= PointCloudTPtr (new PointCloudT);
 		cloud_background 	= PointCloudTPtr (new PointCloudT);
 		pillows				= PointCloudTPtr (new PointCloudT);
+		firstCloud			= PointCloudTPtr (new PointCloudT);
+		firstFaceCloud		= PointCloudTPtr (new PointCloudT);
+		firstCloudFeatures	= PointCloudTPtr (new PointCloudT);	
+		faceFeatures		= PointCloudTPtr (new PointCloudT);
 		facesOnly			= PointCloudTPtr (new PointCloudT);
 		passThruCloud 		= PointCloudTPtr (new PointCloudT);
 		outlierRemCloud		= PointCloudTPtr (new PointCloudT);
-		largest_cluster 	= PointCloudTPtr  (new PointCloudT);
+		largest_cluster 	= PointCloudTPtr (new PointCloudT);
 
 		//Segmentation Models
 		coefficients 		= pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
@@ -264,14 +271,175 @@ public:
 		++counter;
 	}
 
-	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow)
+	ensenso::HeadPose getHeadPose(const PointCloudTPtr headNow, 
+								const PointCloudTPtr filteredSegCloud)
 	{
 		//first compute the centroid of the retrieved cluster
 		//The last compononent of the vector is set to 1, this allows to transform the centroid vector with 4x4 matrices
 		Eigen::Vector4d headCentroid, headHeight;
 		compute3DCentroid (*headNow, headCentroid);
 		//pick position of head at rest
-		if(firstFace) bgdCentroid = headCentroid;
+		if(firstFace) 
+		{
+			bgdCentroid = headCentroid;
+			firstCloud  = filteredSegCloud;
+			firstFaceCloud	= headNow;
+		}
+
+		//Algorithm params
+		bool show_keypoints_ (false);
+		bool show_correspondences_ (false);
+		bool use_cloud_resolution_ (false);
+		bool use_hough_ (true);
+		float model_ss_ (0.01f);
+		float scene_ss_ (0.03f);
+		float rf_rad_ (0.015f);
+		float descr_rad_ (0.02f);
+		float cg_size_ (0.01f);
+		float cg_thresh_ (5.0f);
+
+		PointCloudTPtr model (new PointCloudT ());
+		PointCloudTPtr model_keypoints (new PointCloudT ());
+		PointCloudTPtr scene (new PointCloudT ());
+		PointCloudTPtr scene_keypoints (new PointCloudT ());
+		pcl::PointCloud<PointN>::Ptr face_normals (new pcl::PointCloud<PointN> ());
+		pcl::PointCloud<PointN>::Ptr scene_normals (new pcl::PointCloud<PointN> ());
+		pcl::PointCloud<DescriptorType>::Ptr face_descriptors (new pcl::PointCloud<DescriptorType> ());
+		pcl::PointCloud<DescriptorType>::Ptr scene_descriptors (new pcl::PointCloud<DescriptorType> ());
+		  
+		//
+		//  Compute Normals
+		//
+		pcl::NormalEstimationOMP<PointT, PointN> norm_est;
+		norm_est.setKSearch (10);
+		norm_est.setInputCloud (headNow);
+		norm_est.compute (*face_normals);
+
+		norm_est.setInputCloud (firstCloud);
+		norm_est.compute (*scene_normals);
+
+		//
+		//  Compute Descriptor for keypoints
+		//
+		pcl::SHOTEstimationOMP<PointT, PointN, DescriptorType> descr_est;
+		descr_est.setRadiusSearch (descr_rad_);
+
+		descr_est.setInputCloud (headNow);
+		descr_est.setInputNormals (face_normals);
+		descr_est.setSearchSurface (headNow);
+		descr_est.compute (*face_descriptors);
+
+		descr_est.setInputCloud (firstCloud);
+		descr_est.setInputNormals (scene_normals);
+		descr_est.setSearchSurface (firstCloud);
+		descr_est.compute (*scene_descriptors);
+
+		//
+		//  Find Model-Scene Correspondences with KdTree
+		//
+		pcl::CorrespondencesPtr model_scene_corrs (new pcl::Correspondences ());
+
+		pcl::KdTreeFLANN<DescriptorType> match_search;
+		match_search.setInputCloud (face_descriptors);
+
+		//  For each scene keypoint descriptor, find nearest neighbor into the model keypoints descriptor cloud and add it to the correspondences vector.
+		for (size_t i = 0; i < scene_descriptors->size (); ++i)
+		{
+		  std::vector<int> neigh_indices (1);
+		  std::vector<float> neigh_sqr_dists (1);
+		  if (!pcl_isfinite (scene_descriptors->at (i).descriptor[0])) //skipping NaNs
+		  {
+		    continue;
+		  }
+		  int found_neighs = match_search.nearestKSearch (scene_descriptors->at (i), 1, neigh_indices, neigh_sqr_dists);
+		  if(found_neighs == 1 && neigh_sqr_dists[0] < 0.25f) //  add match only if the squared descriptor distance is less than 0.25 (SHOT descriptor distances are between 0 and 1 by design)
+		  {
+		    pcl::Correspondence corr (neigh_indices[0], static_cast<int> (i), neigh_sqr_dists[0]);
+		    model_scene_corrs->push_back (corr);
+		  }
+		}
+		std::cout << "Correspondences found: " << model_scene_corrs->size () << std::endl;
+
+		//
+		//  Actual Clustering
+		//
+		std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f> > rototranslations;
+		std::vector<pcl::Correspondences> clustered_corrs;
+
+		//  Using Hough3D
+		if (use_hough_)
+		{
+		  //
+		  //  Compute (Keypoints) Reference Frames only for Hough
+		  //
+		  pcl::PointCloud<RFType>::Ptr model_rf (new pcl::PointCloud<RFType> ());
+		  pcl::PointCloud<RFType>::Ptr scene_rf (new pcl::PointCloud<RFType> ());
+
+		  pcl::BOARDLocalReferenceFrameEstimation<PointT, PointN, RFType> rf_est;
+		  rf_est.setFindHoles (true);
+		  rf_est.setRadiusSearch (rf_rad_);
+
+		  rf_est.setInputCloud (headNow);
+		  rf_est.setInputNormals (face_normals);
+		  rf_est.setSearchSurface (headNow);
+		  rf_est.compute (*model_rf);
+
+		  rf_est.setInputCloud (firstCloud);
+		  rf_est.setInputNormals (scene_normals);
+		  rf_est.setSearchSurface (firstCloud);
+		  rf_est.compute (*scene_rf);
+
+		  //  Clustering
+		  pcl::Hough3DGrouping<PointT, PointT, RFType, RFType> clusterer;
+		  clusterer.setHoughBinSize (cg_size_);
+		  clusterer.setHoughThreshold (cg_thresh_);
+		  clusterer.setUseInterpolation (true);
+		  clusterer.setUseDistanceWeight (false);
+
+		  clusterer.setInputCloud (model_keypoints);
+		  clusterer.setInputRf (model_rf);
+		  clusterer.setSceneCloud (firstCloud);
+		  clusterer.setSceneRf (scene_rf);
+		  clusterer.setModelSceneCorrespondences (model_scene_corrs);
+
+		  //clusterer.cluster (clustered_corrs);
+		  clusterer.recognize (rototranslations, clustered_corrs);
+		}
+		else // Using GeometricConsistency
+		{
+		  pcl::GeometricConsistencyGrouping<PointT, PointT> gc_clusterer;
+		  gc_clusterer.setGCSize (cg_size_);
+		  gc_clusterer.setGCThreshold (cg_thresh_);
+
+		  gc_clusterer.setInputCloud (model_keypoints);
+		  gc_clusterer.setSceneCloud (firstCloud);
+		  gc_clusterer.setModelSceneCorrespondences (model_scene_corrs);
+
+		  //gc_clusterer.cluster (clustered_corrs);
+		  gc_clusterer.recognize (rototranslations, clustered_corrs);
+		}
+
+		//
+		//  Output results
+		//
+		std::cout << "Model instances found: " << rototranslations.size () << std::endl;
+		for (size_t i = 0; i < rototranslations.size (); ++i)
+		{
+		  std::cout << "\n    Instance " << i + 1 << ":" << std::endl;
+		  std::cout << "        Correspondences belonging to this instance: " << clustered_corrs[i].size () << std::endl;
+
+		  // Print the rotation matrix and translation vector
+		  Eigen::Matrix3f rotation = rototranslations[i].block<3,3>(0, 0);
+		  Eigen::Vector3f translation = rototranslations[i].block<3,1>(0, 3);
+
+		  printf ("\n");
+		  printf ("            | %6.3f %6.3f %6.3f | \n", rotation (0,0), rotation (0,1), rotation (0,2));
+		  printf ("        R = | %6.3f %6.3f %6.3f | \n", rotation (1,0), rotation (1,1), rotation (1,2));
+		  printf ("            | %6.3f %6.3f %6.3f | \n", rotation (2,0), rotation (2,1), rotation (2,2));
+		  printf ("\n");
+		  printf ("        t = < %0.3f, %0.3f, %0.3f >\n", translation (0), translation (1), translation (2));
+		}
+
 		//now subtract the height of camera above table from computed centroid
 		headHeight = bgdCentroid - headCentroid;
 		firstFace = false;
@@ -306,7 +474,8 @@ public:
 			ROS_INFO_STREAM("projected line: " << projectedFace.transpose());	
 			ROS_INFO_STREAM("head center: " << faceCenter.transpose());	
 			// ROS_INFO_STREAM("parametereized line: " << centralLine);	
-		}											
+		}				
+		// Eigen::AlignedVector3<double> faceCenter, bgdCentroid;							
 		/*
  		compute the spherical coordinates of the face cluster with origin as the background cluster of the base pillow
  		I use the ISO convention with my azimuth being the signed angle measured from azimuth reference direction to the orthogonal projection of 
@@ -345,6 +514,9 @@ public:
 		generic::rad2deg(pose.pitch);
 		generic::rad2deg(pose.yaw);
 		generic::rad2deg(pose.roll);
+
+		pose.roll -= 35;
+		pose.pitch *= 10;
 
 		posePublisher = nh_.advertise<ensenso::HeadPose>("/mannequine_head/pose", 1000);
 		posePublisher.publish(pose);
@@ -416,150 +588,7 @@ public:
 	    return true;
 	}
 
-	void planeSeg()
-	{	/*Generic initializations*/
-		//viewer for segmentation and stuff 		
-		// boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
-		getMultiViewer();
-		multiViewer->registerPointPickingCallback(&Segmentation::pp_callback, *this);
-		// Create the segmentation object
-		pcl::SACSegmentation<PointT> seg;
-		// Optional
-		seg.setOptimizeCoefficients (true);
-		/*Set the maximum number of iterations before giving up*/
-		seg.setMaxIterations(60);
-		seg.setModelType (pcl::SACMODEL_PLANE); 
-		seg.setMethodType (pcl::SAC_RANSAC);
-		/*set the distance to the model threshold to use*/		
-		// Get the plane model, if present.		
-		seg.setDistanceThreshold (distThreshold);	//as measured
-		{
-			std::lock_guard<std::mutex> lock(mutex);	
-			//it is important to pass this->cloud by ref in order to see updates on screen
-			segCloud = boost::shared_ptr<pcl::PointCloud<PointT> >(&this->cloud);
-			updateCloud = false;	
-		}
-
-		/*
-		To ease computation, I downsample the input cloud with a 
-		voxel grid of leaf size 1cm
-		*/
-		PointCloudTPtr filteredSegCloud(new PointCloudT);
-		pcl::VoxelGrid<pcl::PointXYZ> vg;
-		vg.setInputCloud(segCloud);
-		vg.setLeafSize (0.01f, 0.01f, 0.01f);
-		vg.filter (*filteredSegCloud);
-
-		seg.setInputCloud (filteredSegCloud);
-		seg.segment (*inliers, *coefficients);
-
-		// Copy the points of the plane to a new cloud.
-		pcl::ExtractIndices<PointT> extract;
-		extract.setInputCloud(filteredSegCloud);
-		extract.setIndices(inliers);
-		// Get the points associated with the planar surface
-		extract.filter(*plane);
-		//retrieve convex hull
-		pcl::ConvexHull<PointT> hull;
-		hull.setInputCloud(plane);
-
-		//ensure hull is 2-d
-		hull.setDimension(2);
-		hull.reconstruct(*convexHull);
-
-		//redundant check
-		if (hull.getDimension() == 2)
-		{
-			prism.setInputCloud(filteredSegCloud);
-			prism.setInputPlanarHull(convexHull);
-			// First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
-			// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
-			prism.setHeightLimits(zmin, zmax);
-			prism.segment(*faceIndices);
-
-			// Get and show all points retrieved by the hull.
-			extract.setIndices(faceIndices);
-			extract.filter(*faces);
-
-			getLargestCluster(faces, largestIndices);
-			extract.setIndices(largestIndices);
-			extract.filter(*facesOnly);
-
-			passThrough(*faces, passThruCloud, std::move("x"), 
-							std::move(0), std::move(2));
-
-			// passThrough(*passThruCloud, passThruCloud, std::move("y"), 
-			// 				std::move(0), std::move(1.5));
-
-			headPose = getHeadPose(passThruCloud);
-
-			multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
-			multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
-			multiViewer->addPointCloud(faces, "Possible faces", v3);
-			multiViewer->addPointCloud(passThruCloud, "Segmented Face", v4);
-
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Possible faces");
-			multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
-
-			while (running && ros::ok())
-			{
-				/*populate the cloud viewer and prepare for publishing*/
-				if(updateCloud)
-				{   
-				  std::lock_guard<std::mutex> lock(mutex); 
-				  updateCloud = false;
-				  multiViewer->updatePointCloud(segCloud, "Original Cloud");
-
-				  vg.setInputCloud(segCloud);
-				  vg.filter (*filteredSegCloud);
-
-				  prism.setInputCloud(filteredSegCloud);
-				  prism.setInputPlanarHull(convexHull);
-
-				  prism.setHeightLimits(zmin, zmax);
-				  prism.segment(*faceIndices);
-				  // Get and show all points retrieved by the hull.
-				  extract.setIndices(faceIndices);
-				  extract.filter(*faces);				  
-				  multiViewer->updatePointCloud(filteredSegCloud, "Downsampled Cloud");
-
-				  getLargestCluster(faces, largestIndices);
-				  extract.setIndices(largestIndices);
-				  extract.filter(*facesOnly);
-
-				  passThrough(*faces, passThruCloud, std::move("x"), 
-				  				std::move(0), std::move(2));
-				  // passThrough(*passThruCloud, passThruCloud, std::move("y"), 
-				  // 				std::move(0), std::move(1.5));
-				  headPose = getHeadPose(passThruCloud);
-
-				  multiViewer->updatePointCloud(faces, "Possible faces");
-				  multiViewer->updatePointCloud(passThruCloud, "Segmented Face");
-
-				  if(print){
-				  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
-				  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
-				  }
-				  
-				  //broadcast the pose to the network
-				  if(send)
-				    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
-				}	 
-				if(savepcd)
-				{
-					savepcd = false;
-					saveAllClouds(segCloud, faces, facesOnly, outlierRemCloud);
-				}   				
-				multiViewer->spinOnce(1);
-			}
-			multiViewer->close();
-		}
-		else
-			ROS_INFO("Chosen hull is not planar");
-	}
-
+	void planeSeg();
 	void getDescriptors();
 };
 
@@ -603,28 +632,37 @@ public:
 	  // cloud_normals->points.size () should have the same size as the input cloud->points.size ()*
 	}
 
-	void computeOURCVFH(const PointCloudTPtr cloud, const PointCloudTVFH308Ptr ourcvfh_desc, float angle=5.0,\
-						float threshold = 1.0, float axis_ratio = 0.8)
+	void computeOURCVFH(const PointCloudTPtr cloud, 
+						const PointCloudTVFH308Ptr ourcvfh_desc, 
+						float angle=0.13f, float threshold = 0.025f, 
+						float axis_ratio = 0.8)
 	{
 		//get cloud normals
 		PointCloudNPtr normals (new PointCloudN);
 		computeNormals(cloud, normals);
 
-		//create a our_cvfh object
+		//create a our-cvfh object
 		pcl::OURCVFHEstimation<PointT, PointN, VFH308> ourcvfh;
 		ourcvfh.setInputCloud(cloud);
 		ourcvfh.setInputNormals(normals);
 		//create an empty kdtree rep to be passed to the fpfh estimation object
 		TreeKdPtr tree (new TreeKd());
 		ourcvfh.setSearchMethod(tree);
-		ourcvfh.setEPSAngleThreshold(angle/180.0 * M_PI);
+		ourcvfh.setEPSAngleThreshold(angle/*/180.0 * M_PI*/);
 		//normalize the bins of the resulting hostogram using total number of points
-		ourcvfh.setNormalizeBins(true);
+		ourcvfh.setNormalizeBins(false);
 		//normalize the surface descriptors with max size between centroid and cluster points
 		ourcvfh.setCurvatureThreshold(threshold);
 		ourcvfh.setAxisRatio(axis_ratio);
 
 		ourcvfh.compute(*ourcvfh_desc);
+
+		//now get the transform aligning the cloud to the corresponding SGURF.
+		std::vector< Eigen::Matrix4f, Eigen::aligned_allocator< Eigen::Matrix4f > > trans;
+		ourcvfh.getTransforms(trans);
+		// for(auto elem : trans)
+		// 	std::cout << "transformations: " << elem << ", ";
+		// std::cout << std::endl;
 	}
 
 	void computeVFH(const PointCloudTPtr cloud, const PointCloudTVFH308Ptr vfh_desc)
@@ -732,6 +770,155 @@ void Segmentation::getDescriptors()
 	PointCloudCRH90Ptr crhHistogram (new PointCloudCRH90);
 	obj.cameraRollHistogram(cloud, crhHistogram);
 	this->crhHistogram = crhHistogram;
+}
+
+void Segmentation::planeSeg()
+{	/*Generic initializations*/
+	//viewer for segmentation and stuff 		
+	// boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
+	getMultiViewer();
+	multiViewer->registerPointPickingCallback(&Segmentation::pp_callback, *this);
+	// Create the segmentation object
+	pcl::SACSegmentation<PointT> seg;
+	// Optional
+	seg.setOptimizeCoefficients (true);
+	/*Set the maximum number of iterations before giving up*/
+	seg.setMaxIterations(60);
+	seg.setModelType (pcl::SACMODEL_PLANE); 
+	seg.setMethodType (pcl::SAC_RANSAC);
+	/*set the distance to the model threshold to use*/		
+	// Get the plane model, if present.		
+	seg.setDistanceThreshold (distThreshold);	//as measured
+	{
+		std::lock_guard<std::mutex> lock(mutex);	
+		//it is important to pass this->cloud by ref in order to see updates on screen
+		segCloud = boost::shared_ptr<pcl::PointCloud<PointT> >(&this->cloud);
+		updateCloud = false;	
+	}
+
+	/*
+	To ease computation, I downsample the input cloud with a 
+	voxel grid of leaf size 1cm
+	*/
+	PointCloudTPtr filteredSegCloud(new PointCloudT);
+	pcl::VoxelGrid<pcl::PointXYZ> vg;
+	vg.setInputCloud(segCloud);
+	vg.setLeafSize (0.01f, 0.01f, 0.01f);
+	vg.filter (*filteredSegCloud);
+
+	seg.setInputCloud (filteredSegCloud);
+	seg.segment (*inliers, *coefficients);
+
+	// Copy the points of the plane to a new cloud.
+	pcl::ExtractIndices<PointT> extract;
+	extract.setInputCloud(filteredSegCloud);
+	extract.setIndices(inliers);
+	// Get the points associated with the planar surface
+	extract.filter(*plane);
+	//retrieve convex hull
+	pcl::ConvexHull<PointT> hull;
+	hull.setInputCloud(plane);
+
+	//ensure hull is 2-d
+	hull.setDimension(2);
+	hull.reconstruct(*convexHull);
+
+	//redundant check
+	if (hull.getDimension() == 2)
+	{
+		prism.setInputCloud(filteredSegCloud);
+		prism.setInputPlanarHull(convexHull);
+		// First parameter: minimum Z value. Set to 0, segments faces lying on the plane (can be negative).
+		// Second parameter: maximum Z value, set to 10cm. Tune it according to the height of the faces you expect.
+		prism.setHeightLimits(zmin, zmax);
+		prism.segment(*faceIndices);
+
+		// Get and show all points retrieved by the hull.
+		extract.setIndices(faceIndices);
+		extract.filter(*faces);
+
+		getLargestCluster(faces, largestIndices);
+		extract.setIndices(largestIndices);
+		extract.filter(*facesOnly);
+
+		passThrough(*faces, passThruCloud, std::move("x"), 
+						std::move(0), std::move(2));
+
+		/*Get cvfh descriptors for faces*/
+		const PointCloudTVFH308Ptr ourcvfh_desc;
+
+		// objectPoseEstim obj;
+		// obj.computeOURCVFH(passThruCloud, ourcvfh_desc);
+
+		headPose = getHeadPose(passThruCloud, filteredSegCloud);
+
+		multiViewer->addPointCloud(segCloud, "Original Cloud", v1);
+		multiViewer->addPointCloud(filteredSegCloud, "Downsampled Cloud", v2);
+		multiViewer->addPointCloud(faces, "Possible faces", v3);
+		multiViewer->addPointCloud(passThruCloud, "Segmented Face", v4);
+
+		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Original Cloud");
+		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Downsampled Cloud");
+		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Possible faces");
+		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
+
+		while (running && ros::ok())
+		{
+			/*populate the cloud viewer and prepare for publishing*/
+			if(updateCloud)
+			{   
+			  std::lock_guard<std::mutex> lock(mutex); 
+			  updateCloud = false;
+			  multiViewer->updatePointCloud(segCloud, "Original Cloud");
+
+			  vg.setInputCloud(segCloud);
+			  vg.filter (*filteredSegCloud);
+
+			  prism.setInputCloud(filteredSegCloud);
+			  prism.setInputPlanarHull(convexHull);
+
+			  prism.setHeightLimits(zmin, zmax);
+			  prism.segment(*faceIndices);
+			  // Get and show all points retrieved by the hull.
+			  extract.setIndices(faceIndices);
+			  extract.filter(*faces);				  
+			  multiViewer->updatePointCloud(filteredSegCloud, "Downsampled Cloud");
+
+			  getLargestCluster(faces, largestIndices);
+			  extract.setIndices(largestIndices);
+			  extract.filter(*facesOnly);
+
+			  passThrough(*faces, passThruCloud, std::move("x"), 
+			  				std::move(0), std::move(2));
+			  // passThrough(*passThruCloud, passThruCloud, std::move("y"), 
+			  // 				std::move(0), std::move(1.5));
+			  // obj.computeOURCVFH(passThruCloud, ourcvfh_desc);
+
+			  headPose = getHeadPose(passThruCloud, filteredSegCloud);
+
+			  multiViewer->updatePointCloud(faces, "Possible faces");
+			  multiViewer->updatePointCloud(passThruCloud, "Segmented Face");
+
+			  if(print){
+			  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
+			  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
+			  }
+			  
+			  //broadcast the pose to the network
+			  if(send)
+			    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
+			}	 
+			if(savepcd)
+			{
+				savepcd = false;
+				saveAllClouds(segCloud, faces, facesOnly, outlierRemCloud);
+			}   				
+			multiViewer->spinOnce(1);
+		}
+		multiViewer->close();
+	}
+	else
+		ROS_INFO("Chosen hull is not planar");
 }
 
 int main(int argc, char* argv[])
