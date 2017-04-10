@@ -5,15 +5,15 @@
 
 #### Author: [Olalekan Ogunmolu](http://twitter.com/patmeansnoble)
 
-####[Table of Contents](#table-of-contents)
+#### [Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
 - [Dependencies](#dependencies)
   - [ROS](#ros)
   - [uEye Driver](#ueye-driver)
   - [EnsensoSDK](#ensensosdk)
-  - [Point Clouds Library](#point-clouds-library)	
+  - [Point Clouds Library](#point-clouds-library)
   - [Optional Dependencies](#optional-dependencies)
-	
+
 - [Network Configuration](#network-configuration)
 - [Using Ensenso on Linux](#using-ensenso-on-linux)
 - [Training Data for Mannequine Head](#training-data-for-manikin)
@@ -22,7 +22,7 @@
 - [Citation](#citation)
 
 #### Introduction
-The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured. 
+The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured.
 
 <div class="fig figcenter fighighlight">
   <img src="/images/0001_gray.png" height="250" width="45%" align="left" style="border-left: 1px solid black;">
@@ -34,10 +34,10 @@ The sensor captures a single 3D profile for each camera exposure. The Ensenso ca
 <br>
   Figure 1: Left: Raw Image from the Sensor's Camera<br>
   Right(left: inset): Point Cloud from scene of the head &nbsp; <br>
-    Right(right inset): Point Cloud after segmenting face from head 
+    Right(right inset): Point Cloud after segmenting face from head
 
 #### Dependencies
-	
+
 For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A minimum iof 2GB RAM and 2GHz CPU frequency is required to run the camera. This code is C++-11 compatible. It would not compile without enabling the c++ 11 options on your compiler. A minimum of g++ 4.8 or VS 2012 is required to run this code.
 
 ##### ROS
@@ -66,9 +66,9 @@ For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A
 The factory ip address has been changed to 192.168.1.11. On your system's ethernet configuration settings, you would want to set an ip address and subnet similar to the following:
 
 ```bash
-ip address: 192.168.1.10
-subnet: 255.255.255.0
-gateway: [Leave blank]
+  ip address: 192.168.1.10
+  subnet: 255.255.255.0
+  gateway: [Leave blank]
 ```
 
 Below is a visual description of a typical setup
@@ -86,7 +86,7 @@ In addition, ensure your ubuntu firewall is turned off:
  sudo ufw disable
 ```
 
-If you encounter problems during set-up, it might be worth the while runing the `ueyesetupid` executable packed into the gunzipped tarball available at [setup id](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You would want to unzip the tar ball and run the `ueyesdk-setup-4.81-eth-amd64.gz.run` file. This should install configuration files to your `/usr/local/share/ueye/bin` directory from where you can configure the id of your sensor (which should be 1 by default). 
+If you encounter problems during set-up, it might be worth the while runing the `ueyesetupid` executable packed into the gunzipped tarball available at [setup id](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You would want to unzip the tar ball and run the `ueyesdk-setup-4.81-eth-amd64.gz.run` file. This should install configuration files to your `/usr/local/share/ueye/bin` directory from where you can configure the id of your sensor (which should be 1 by default).
 
 #### Using Ensenso on Linux
 
@@ -115,7 +115,7 @@ This node segments the face from the environment where the head is stationed. We
 
 Be sure the id of the sensor is properly set using the `ids camera manager` configuration utility that ships with [ueye](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You can find this in the images folder of this package.
 
-##### I am having issues setting up a dual GigEthernet and wireless connection 
+##### I am having issues setting up a dual GigEthernet and wireless connection
 
 Please follow the advice listed in the Installation section
 
