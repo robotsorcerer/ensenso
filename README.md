@@ -122,7 +122,7 @@ Please follow the advice listed in the Installation section
 ##### Other queries
 If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble).
 
-###Citation
+### Citation
 
 If you used `ensenso` in your work, I would be glad if you could cite it.
 
