@@ -63,22 +63,9 @@ For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A
 
 #### Network Configuration
 
-The factory ip address has been changed to 192.168.1.11. On your system's ethernet configuration settings, you would want to set an ip address and subnet similar to the following:
+Open `idscameramanager` with root privileges and manually set the ip address of ensenso to a persistent one. A typical one might be `192.168.1.11` for example.
 
-```bash
-  ip address: 192.168.1.10
-  subnet: 255.255.255.0
-  gateway: [Leave blank]
-```
-
-Below is a visual description of a typical setup
-
-<div class="fig figcenter fighighlight">
-	<img src="/images/sys_network.png" height="350" width="45%" align="middle" >
-	<img src="/images/ensenso_conf.png" height="350"  width="45%" align="right" style="border-left: 1px solid black;">
-	</br>
-	<div class="figcaption" align="middle"></div>
-</div>
+In our setup, we connect the camera to a local router and connect our system to the same router so that the desktop can access the internet while having access to the ensenso camera.
 
 In addition, ensure your ubuntu firewall is turned off:
 
@@ -94,21 +81,27 @@ If you encounter problems during set-up, it might be worth the while runing the 
 
 2. Clone this repo to your catkin src folder then `catkin build` from your catkin workspace root.
 
-3. All things being equal, you should be presented with a pcl window that stream the frames that are grabbed to your pcl cloud viewer
+### Run the program
 
-#### Trainingh Data for Mannequine Head
+The bridge is our ros interface to the sensor.
 
-The training data I used in the paper is available on my [academic webpage](http://ecs.utdallas.edu/~opo140030/sensors/data.tar.gz). Download the zipped tar-ball and extract it to a folder within `ensenso_root` named data. To train your model, you would want to do:
+We can bring up the ros nodes with,
 
 ```bash
-  IMAGES_ROOT=data th scripts/prepro.lua
+Terminal 1$ rosrun ensenso ensenso_bridge
 ```
 
-This would run through all the training images, separate them into background, face and fake faces tensors, and it would do spatial contrastive normalization of the grayscale images in the YUV space
+To visualize the ir and point clouds of the environment, we would run
 
-#### Head Segmentation
+```bash
+Terminal 2$ rosrun ensenso ensenso_viewer
+```
 
-This node segments the face from the environment where the head is stationed. We use a plane segmentation algorithm to find the table in the scene, and find the clusters sitting on it.  From the convex hull computed from plane coefficients, we extrude the model and project the convex hull points inside.
+Segmentation described in the paper is performed in
+
+```bash
+  rosrun ensenso ensenso_seg
+```
 
 #### FAQs
 ##### I am having issues connecting to the sensor even though my code compiles
