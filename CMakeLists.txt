@@ -31,9 +31,9 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   sensor_msgs
-  PCL 
+  PCL
   roslib
-  rostime  
+  rostime
   message_filters
   cv_bridge
   tf
@@ -67,6 +67,7 @@ std_msgs
 ###########
 
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
+
 include_directories(
   ${Boost_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
@@ -83,7 +84,7 @@ if(ENSENSO_FOUND)
   message(STATUS "Ensenso SDK found")
 
   include_directories(${ENSENSO_INCLUDE_DIRS}
-  					  ${PCL_INCLUDE_DIRS} 
+  					 ${PCL_INCLUDE_DIRS}
   					  )
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
@@ -92,14 +93,14 @@ if(ENSENSO_FOUND)
   set(bridge_files src/ensenso_bridge.cxx
                   src/pathfinder.cxx)
 
-  set(viewer_files src/ensenso_viewer.cxx 
+  set(viewer_files src/ensenso_viewer.cxx
                    src/factory_functions.cxx
-                    src/pathfinder.cxx)  
+                    src/pathfinder.cxx)
 
   set(seg_files src/ensenso_segmentation.cxx
-                src/pathfinder.cxx 
+                src/pathfinder.cxx
                 src/boost_sender.cxx
-                src/factory_functions.cxx)                      
+                src/factory_functions.cxx)
 
   #add correspondence grouping library
   add_library(savgol src/savgol.cxx)
@@ -108,7 +109,8 @@ if(ENSENSO_FOUND)
 
   catkin_package(
     INCLUDE_DIRS include
-     CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge message_runtime std_msgs tf  tf_conversions
+     CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
+		 message_runtime std_msgs tf  tf_conversions
      LIBRARIES pathfinder savgol boostsender
   )
 
@@ -119,10 +121,10 @@ if(ENSENSO_FOUND)
 
   ## Specify libraries to link a library or executable target against
   target_link_libraries(ensenso_bridge
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} 
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
   )
 
-  target_link_libraries(ensenso_viewer 
+  target_link_libraries(ensenso_viewer
     ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
   )
 

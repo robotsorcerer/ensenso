@@ -46,11 +46,11 @@ For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A
 
 ##### uEye Driver
 
-  Please make sure you have the IDS uEye driver installed in version 4.00 or higher. For N20, N30 and N35 cameras a driver with version 4.41 or higher is required. Please visit [ensenso download](www.ensenso.com/download) page and download and install the latest driver for your system.
+  Please make sure you have the IDS uEye driver installed in version 4.00 or higher. For N20, N30 and N35 cameras a driver with version 4.41 or higher is required. Please visit [ensenso download](https://www.ensenso.com/download) page and download and install the latest driver for your system.
 
 ##### EnsensoSDK
 
-  After the uEye driver installation is complete, download the latest EnsensoSDK software release from [ensenso download](www.ensenso.com/download) and follow the instructions on screen to install the software.
+  After the uEye driver installation is complete, download the latest EnsensoSDK software release from [ensenso download](https://www.ensenso.com/download) and follow the instructions on screen to install the software.
 
 #####   Point Clouds Library
 
