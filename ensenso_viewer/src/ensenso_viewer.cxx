@@ -294,8 +294,6 @@ private:
     viewer->addPointCloud(range_image_ptr, range_color_handler, cloudName);
     setViewerPose(*viewer, range_image.getTransformationToWorldSystem());
 
-      ROS_INFO_STREAM("points: " << cloud_ptr->points.size());
-
     for(; running && ros::ok() ;)
     {
       /*populate the cloud viewer and prepare for publishing*/

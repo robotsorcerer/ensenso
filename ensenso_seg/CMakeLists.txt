@@ -51,10 +51,7 @@ include_directories(${ENSENSO_INCLUDE_DIRS}
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-set(seg_files src/ensenso_segmentation.cxx
-							src/pathfinder.cxx
-							src/boost_sender.cxx
-							src/factory_functions.cxx)
+set(seg_files src/ensenso_segmentation.cxx)
 
 catkin_package(
 	INCLUDE_DIRS include
@@ -67,5 +64,5 @@ add_executable(ensenso_seg    ${seg_files})
 
 target_link_libraries(ensenso_seg
   ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
-	 # -lm -ldl
+	  -lm -ldl
 )

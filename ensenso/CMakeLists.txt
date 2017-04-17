@@ -99,7 +99,7 @@ if(ENSENSO_FOUND)
   )
 
   add_library(savgol src/savgol.cxx)
-  add_library(pathfinder src/pathfinder.cxx)
+  add_library(pathfinder src/pathfinder.cxx src/factory_functions.cxx)
   add_library(boostsender src/boost_sender.cxx)
 
   ## Declare a C++ executable
