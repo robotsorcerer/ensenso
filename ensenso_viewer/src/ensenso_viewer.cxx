@@ -3,6 +3,7 @@
 #include <memory>
 #include <chrono>
 #include <iostream>
+#include <cmath>
 
 #include <ros/ros.h>
 #include <ros/spinner.h>
@@ -23,6 +24,9 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
+#include <pcl/range_image/range_image.h>  //convert black and white to range image
+#include <pcl/visualization/range_image_visualizer.h>
+
 /*Globlal namespaces and aliases*/
 using namespace pathfinder;
 
@@ -33,7 +37,7 @@ using pcl_viz = pcl::visualization::PCLVisualizer;
 
 class Receiver
 {
-private:  
+private:
   /*aliases*/
   using imageMsgSub = message_filters::Subscriber<sensor_msgs::Image>;
   using cloudMsgSub = message_filters::Subscriber<sensor_msgs::PointCloud2>;
@@ -53,7 +57,7 @@ private:
   std::string windowName;
   const std::string basetopic;
   std::string subNameDepth;
-  PointCloudT cloud;  
+  PointCloudT cloud;
 
   unsigned long const hardware_threads;
   ros::AsyncSpinner spinner;
@@ -67,14 +71,31 @@ private:
   message_filters::Synchronizer<syncPolicy> sync;
 
   boost::shared_ptr<visualizer> viz;
+
+	// Parameters needed by the range image object:
+	// Angular resolution is the angular distance between pixels.
+	// Kinect: 57° horizontal FOV, 43° vertical FOV, 640x480 (chosen here).
+	// Xtion: 58° horizontal FOV, 45° vertical FOV, 640x480.
+	float angularResolutionX = (float)(57.0f / 640.0f * (M_PI / 180.0f));
+	float angularResolutionY = (float)(43.0f / 480.0f * (M_PI / 180.0f));
+	// Maximum horizontal and vertical angles. For example, for a full panoramic scan,
+	// the first would be 360º. Choosing values that adjust to the real sensor will
+	// decrease the time it takes, but don't worry. If the values are bigger than
+	// the real ones, the image will be automatically cropped to discard empty zones.
+	float maxAngleX = (float)(60.0f * (M_PI / 180.0f));
+	float maxAngleY = (float)(50.0f * (M_PI / 180.0f));
+  // Range image object.
+  boost::shared_ptr<pcl::RangeImage> range_image_ptr;
+  pcl::RangeImage rangeImage;
+
 public:
   //constructor
   Receiver()
-  : updateCloud(false), updateImage(false), save(false), counter(0), 
-  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"), 
-  hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2), 
-  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"), 
-  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),  
+  : updateCloud(false), updateImage(false), save(false), counter(0),
+  cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"),
+  hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2),
+  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"),
+  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),
   sync(syncPolicy(10), subCloud, subImageIr)
   {
     sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
@@ -85,14 +106,13 @@ public:
   }
   //destructor
   ~Receiver()
-  {     
+  {
     viz.reset();
     viewer.reset();
   }
 
   Receiver(Receiver const&) =delete;
   Receiver& operator=(Receiver const&) = delete;
-
 
   void run()
   {
@@ -101,33 +121,33 @@ public:
   }
 private:
   void begin()
-  {      
-    if(spinner.canStart())  
-    {   
-      spinner.start();  
+  {
+    if(spinner.canStart())
+    {
+      spinner.start();
     }
     running = true;
     while(!updateImage || !updateCloud)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }    
+    }
     //spawn the threads
     threads.push_back(std::thread(&Receiver::cloudDisp, this));
     threads.push_back(std::thread(&Receiver::imageDisp, this));
     //call join on each thread in turn
     std::for_each(threads.begin(), threads.end(), \
-                  std::mem_fn(&std::thread::join)); 
+                  std::mem_fn(&std::thread::join));
   }
 
   void end()
   {
-    spinner.stop();       
+    spinner.stop();
     running = false;
   }
 
   void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage)
   {
-    cv::Mat ir; 
+    cv::Mat ir;
     PointCloudT cloud;
     getImage(ensensoImage, ir);
     getCloud(ensensoCloud, cloud);
@@ -140,7 +160,7 @@ private:
   }
 
   void getImage(const sensor_msgs::ImageConstPtr msgImage, cv::Mat &image) const
-  {    
+  {
     cv_bridge::CvImageConstPtr cv_ptr;
     try
     {
@@ -187,8 +207,8 @@ private:
 
   void imageDisp()
   {
-    cv::Mat ir;  
-    PointCloudT cloud; 
+    cv::Mat ir;
+    PointCloudT cloud;
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(windowName, 640, 480) ;
 
@@ -200,6 +220,8 @@ private:
         ir = this->ir;
         cloud = this->cloud;
         updateImage = false;
+
+        // ROS_INFO_STREAM("ir image size: " << ir.size());
 
         cv::imshow(windowName, ir);
       }
@@ -219,33 +241,79 @@ private:
       }
     }
     cv::destroyAllWindows();
-    cv::waitKey(100);    
+    cv::waitKey(100);
+  }
+
+  void
+  setViewerPose (pcl::visualization::PCLVisualizer& viewer, const Eigen::Affine3f& viewer_pose)
+  {
+    Eigen::Vector3f pos_vector = viewer_pose * Eigen::Vector3f(0, 0, 0);
+    Eigen::Vector3f look_at_vector = viewer_pose.rotation () * Eigen::Vector3f(0, 0, 1) + pos_vector;
+    Eigen::Vector3f up_vector = viewer_pose.rotation () * Eigen::Vector3f(0, -1, 0);
+    viewer.setCameraPosition (pos_vector[0], pos_vector[1], pos_vector[2],
+                              look_at_vector[0], look_at_vector[1], look_at_vector[2],
+                              up_vector[0], up_vector[1], up_vector[2]);
   }
 
   void cloudDisp()
   {
     viz = boost::shared_ptr<visualizer> (new visualizer());
-    viewer = boost::shared_ptr<pcl_viz> (new pcl_viz);  
-    viewer= viz->createViewer(); 
+    viewer = boost::shared_ptr<pcl_viz> (new pcl_viz);
+    viewer= viz->createViewer();
 
-    // PointCloudT cloud  = this->cloud;   
-    PointCloudT::Ptr cloud_ptr (&this->cloud);    
+    // PointCloudT cloud  = this->cloud;
+    PointCloudT::Ptr cloud_ptr (&this->cloud);
+
+    // Visualize the image.
+    range_image_ptr = boost::shared_ptr<pcl::RangeImage> (new pcl::RangeImage);
+    pcl::RangeImage& range_image = *range_image_ptr;
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> range_color_handler (range_image_ptr, 225, 155, 155);
+
+    //do range image
+    Eigen::Affine3f sensorPose = Eigen::Affine3f(Eigen::Translation3f(cloud_ptr->sensor_origin_[0],
+								 cloud_ptr->sensor_origin_[1],
+								 cloud_ptr->sensor_origin_[2])) *
+								 Eigen::Affine3f(cloud_ptr->sensor_orientation_);
+
+    // Noise level. If greater than 0, values of neighboring points will be averaged.
+   	// This would set the search radius (e.g., 0.03 == 3cm).
+   	float noiseLevel = 0.0f;
+   	// Minimum range. If set, any point closer to the sensor than this will be ignored.
+   	float minimumRange = 0.0f;
+   	// Border size. If greater than 0, a border of "unobserved" points will be left
+   	// in the image when it is cropped.
+   	int borderSize = 1;
+
+    range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
+									maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
+									noiseLevel, minimumRange, borderSize);
+
 
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 150, 155);
-    cv::Mat ir = this->ir;     
-    viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
+    cv::Mat ir = this->ir;
+    viewer->addPointCloud(range_image_ptr, range_color_handler, cloudName);
+    setViewerPose(*viewer, range_image.getTransformationToWorldSystem());
+
+      ROS_INFO_STREAM("points: " << cloud_ptr->points.size());
 
     for(; running && ros::ok() ;)
     {
       /*populate the cloud viewer and prepare for publishing*/
       if(updateCloud)
-      {   
-        std::lock_guard<std::mutex> lock(mutex); 
+      {
+        std::lock_guard<std::mutex> lock(mutex);
         updateCloud = false;
-        viewer->updatePointCloud(cloud_ptr, cloudName);
+
+        // ROS_INFO_STREAM(" width: " << cloud_ptr->width << " | height: " << cloud_ptr->height);
+
+        sensorPose = viewer->getViewerPose();
+        range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
+    									maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
+    									noiseLevel, minimumRange, borderSize);
+        viewer->updatePointCloud(range_image_ptr, range_color_handler, cloudName);
       }
       if(save)
-      {            
+      {
         save = false;
         saveCloudAndImage(*cloud_ptr, ir);
       }
@@ -257,7 +325,7 @@ private:
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "ensensor_viewer_node"); 
+  ros::init(argc, argv, "ensensor_viewer_node");
 
   ROS_INFO_STREAM("Started node " << ros::this_node::getName().c_str());
 
@@ -268,6 +336,6 @@ int main(int argc, char** argv)
   {
     return 0;
   }
-  
+
   ros::shutdown();
 }

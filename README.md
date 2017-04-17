@@ -112,8 +112,25 @@ Be sure the id of the sensor is properly set using the `ids camera manager` conf
 
 Please follow the advice listed in the Installation section
 
+#### `em` and `empy` colliding in namespace
+
+I solved this problem by simply uninstalling em, and installing empy:
+
+pip uninstall em
+pip install empy
+
+See this [issue ticket](https://github.com/ros/genmsg/issues/63).
+
+#### Can't get to resolve the python vesion in the bash namespace
+
+Catkin build as follows:
+
+`cb  -DPYTHON_VERSION=2.7`. Be sure to delete your devel, build and logs spaces before re cb'ing
+
 ##### Other queries
 If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble).
+
+
 
 ### Citation
 

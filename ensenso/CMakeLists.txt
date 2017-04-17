@@ -60,12 +60,6 @@ DEPENDENCIES
 std_msgs
 )
 
-#
-
-###########
-## Build ##
-###########
-
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 
 include_directories(
@@ -93,19 +87,9 @@ if(ENSENSO_FOUND)
   set(bridge_files src/ensenso_bridge.cxx
                   src/pathfinder.cxx)
 
-  set(viewer_files src/ensenso_viewer.cxx
-                   src/factory_functions.cxx
-                    src/pathfinder.cxx)
-
-  set(seg_files src/ensenso_segmentation.cxx
-                src/pathfinder.cxx
-                src/boost_sender.cxx
-                src/factory_functions.cxx)
-
-  #add correspondence grouping library
-  add_library(savgol src/savgol.cxx)
-  add_library(pathfinder src/pathfinder.cxx)
-  add_library(boostsender src/boost_sender.cxx)
+  # set(viewer_files src/ensenso_viewer.cxx
+  #                  src/factory_functions.cxx
+  #                   src/pathfinder.cxx)
 
   catkin_package(
     INCLUDE_DIRS include
@@ -114,23 +98,17 @@ if(ENSENSO_FOUND)
      LIBRARIES pathfinder savgol boostsender
   )
 
+  add_library(savgol src/savgol.cxx)
+  add_library(pathfinder src/pathfinder.cxx)
+  add_library(boostsender src/boost_sender.cxx)
+
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
-  add_executable(ensenso_viewer ${viewer_files})
-  add_executable(ensenso_seg    ${seg_files})
-
-  ## Specify libraries to link a library or executable target against
-  target_link_libraries(ensenso_bridge
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
-  )
-
-  target_link_libraries(ensenso_viewer
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
-  )
+  # add_executable(ensenso_viewer ${viewer_files})
 
   target_link_libraries(pathfinder boostsender
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
-    )
+  	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+  	)
 
   install(TARGETS savgol pathfinder boostsender
           ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -140,11 +118,14 @@ if(ENSENSO_FOUND)
   install(DIRECTORY include/${PROJECT_NAME}/
           DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 
-  target_link_libraries(ensenso_seg
-    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} ${catkin_LIBRARIES} -lm -ldl
+  ## Specify libraries to link a library or executable target against
+  target_link_libraries(ensenso_bridge
+    ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
   )
 
-  # target_link_libraries(ensenso_grouping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})
+  # target_link_libraries(ensenso_viewer
+    # ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+  # )
 
 else(ENSENSO_FOUND)
 	message(WARNING "Ensenso SDK not found. Not building ensenso interface code.")
