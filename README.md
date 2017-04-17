@@ -25,8 +25,8 @@
 The sensor captures a single 3D profile for each camera exposure. The Ensenso camera uses the projected texture stereo vision technique and is fitted with two global shutter CMOS sensors and a pattern projector, which projects a random dot pattern onto the object to be captured.
 
 <div class="fig figcenter fighighlight">
-  <img src="/images/0001_gray.png" height="250" width="45%" align="left" style="border-left: 1px solid black;">
-  <img src="/images/fancy2.png" height="250" width="45%" align="right" style="border-left: 1px solid black;">
+  <img src="/ensenso/images/0001_gray.png" height="250" width="45%" align="left" style="border-left: 1px solid black;">
+  <img src="/ensenso/images/fancy2.png" height="250" width="45%" align="right" style="border-left: 1px solid black;">
   </br>
   <div class="figcaption" align="middle">
   </div>
@@ -81,29 +81,36 @@ If you encounter problems during set-up, it might be worth the while runing the 
 
 2. Clone this repo to your catkin src folder then `catkin build` from your catkin workspace root.
 
-### Run the program
+3. Run the program
 
-The bridge is our ros interface to the sensor.
+- The bridge is our ros interface to the sensor.
 
-We can bring up the ros nodes with,
+  We can bring up the ros nodes with,
 
-```bash
-Terminal 1$ rosrun ensenso ensenso_bridge
-```
+  ```bash
+  Terminal 1$ rosrun ensenso ensenso_bridge
+  ```
 
-To visualize the ir and point clouds of the environment, we would run
+- To visualize the ir and point clouds of the environment, we would run
 
-```bash
-Terminal 2$ rosrun ensenso ensenso_viewer
-```
+  ```bash
+  Terminal 2$ rosrun ensenso_viewer ensenso_viewer
+  ```
 
-Segmentation described in the paper is performed in
+- Segmentation described in the paper is performed in
 
-```bash
-  rosrun ensenso ensenso_seg
-```
+  ```bash
+    rosrun ensenso_seg ensenso_seg
+  ```
+
+- Recognition and Detection with CMU Open Face Detector
+
+  ```bash
+    rosrun ensenso_detect ensenso_detect
+  ```
 
 #### FAQs
+
 ##### I am having issues connecting to the sensor even though my code compiles
 
 Be sure the id of the sensor is properly set using the `ids camera manager` configuration utility that ships with [ueye](http://ecs.utdallas.edu/~opo140030/sensors/uEye-Linux-4.81-64-bit.tgz). You can find this in the images folder of this package.
@@ -112,7 +119,7 @@ Be sure the id of the sensor is properly set using the `ids camera manager` conf
 
 Please follow the advice listed in the Installation section
 
-#### `em` and `empy` colliding in namespace
+##### `em` and `empy` colliding in namespace
 
 I solved this problem by simply uninstalling em, and installing empy:
 
@@ -121,18 +128,23 @@ pip install empy
 
 See this [issue ticket](https://github.com/ros/genmsg/issues/63).
 
-#### Can't get to resolve the python vesion in the bash namespace
+##### Can't get to resolve the python vesion in the bash namespace
 
 Catkin build as follows:
 
 `cb  -DPYTHON_VERSION=2.7`. Be sure to delete your devel, build and logs spaces before re cb'ing
 
-##### Other queries
-If you run into further issues, feel free to open an issues ticket or ping me [@patmeansnoble](https://twitter.com/patmeansnoble).
+##### Running into package dependencies cyclical errors
 
+remove the ensenso_seg files from your catkin built devel space
 
+`rm devel/liv/.private/ensenso_seg -rf`
 
-### Citation
+#### Other queries
+
+If you run into further issues, feel free to open an issues ticket.
+
+#### Citation
 
 If you used `ensenso` in your work, I would be glad if you could cite it.
 
