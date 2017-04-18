@@ -1,7 +1,7 @@
-/*  
+/*
 *   MIT License
-*   
-*   Copyright (c) December 2016 
+*
+*   Copyright (c) December 2016
 *
 *   Permission is hereby granted, free of charge, to any person obtaining a copy
 *   of this software and associated documentation files (the "Software"), to deal
@@ -9,10 +9,10 @@
 *   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 *   copies of the Software, and to permit persons to whom the Software is
 *   furnished to do so, subject to the following conditions:
-*   
+*
 *   The above copyright notice and this permission notice shall be included in all
 *   copies or substantial portions of the Software.
-*   
+*
 *   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 *   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 *   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,7 +21,7 @@
 *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 *   SOFTWARE.
 *
-* 
+*
 *  Author: Olalekan P. Ogunmolu
 */
 #include <memory>
@@ -91,7 +91,7 @@ int getOpenCVType (std::string type)
 }
 
 /*typedefs*/
-using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback 
+using PairOfImages =  std::pair<pcl::PCLImage, pcl::PCLImage>;  //for the Ensenso grabber callback
 using PointT = pcl::PointXYZ;
 using PointCloudT = pcl::PointCloud<PointT>;
 
@@ -125,7 +125,7 @@ void initCaptureParams()
   const int target_brightness = 80;
   const std::string trigger_mode = "Software";    //this is flex mode
   const bool use_disparity_map_area_of_interest = true;  //reduce area of interest to aid faster transfer times
-  
+
   if(!ensenso_ptr->configureCapture ( auto_exposure,
                      auto_gain,
                      bining,
@@ -148,7 +148,7 @@ void initCaptureParams()
 void initPublishers()
 {
   ros::NodeHandle nh;
-  image_transport::ImageTransport it(nh);  
+  image_transport::ImageTransport it(nh);
   ROS_INFO("%s", "Initializing Publishers");
 
   imagePub = it.advertise("/ensenso/image_combo", 10);
@@ -170,10 +170,9 @@ void readAndLoadParams()
   std::string settingsFile = settingsPath.string();
 
   ROS_INFO_STREAM("Loading settings file: " << settingsFile);
-  std::ifstream file("/home/robotec/catkin_ws/src/ensenso/data/settings_face_filled.json");
+  std::ifstream file("~/catkin_ws/src/sensors/ensenso/ensenso_calib_params.json");
 
-
-  if (file.is_open() && file.rdbuf()) 
+  if (file.is_open() && file.rdbuf())
   {
      // You can use the std::stringstream class to read a textfile:
      std::stringstream buffer;
@@ -183,23 +182,23 @@ void readAndLoadParams()
      // ROS_INFO_STREAM("file contents \n"  << fileContent);
 
      NxLibItem tmp("/tmp");
-     tmp.setJson(fileContent); 
-     if (tmp[itmParameters].exists()) 
+     tmp.setJson(fileContent);
+     if (tmp[itmParameters].exists())
      {
-        camera_[itmParameters].setJson(tmp[itmParameters].asJson(), true); 
-        // writeableNodesOnly = true silently skips 
-        // read-only nodes instead of failing when 
+        camera_[itmParameters].setJson(tmp[itmParameters].asJson(), true);
+        // writeableNodesOnly = true silently skips
+        // read-only nodes instead of failing when
         // encountering a read-only node
         ROS_INFO("Successfully read camera settings file");
-     } 
-     else 
+     }
+     else
      {
         camera_[itmParameters].setJson(tmp.asJson(), true); // with writebleNodesOnly = true, see comment above
      }
-     // ROS_INFO_STREAM("camera_[itmParameters] \n" << 
+     // ROS_INFO_STREAM("camera_[itmParameters] \n" <<
      //                  camera_[itmParameters].setJson(tmp.asJson(), true));
-  } 
-  else 
+  }
+  else
   {
      ROS_INFO("Could not parse json params file");
   }
@@ -208,11 +207,11 @@ void readAndLoadParams()
 
 bool initEnsensoParams()
 {
-  ROS_INFO("%s", "Initializing ensenso camera parameters");  
+  ROS_INFO("%s", "Initializing ensenso camera parameters");
   ensenso_ptr.reset (new pcl::EnsensoGrabber);
   ensenso_ptr->openTcpPort();
   ensenso_ptr->openDevice();
-  ensenso_ptr->enumDevices();    
+  ensenso_ptr->enumDevices();
   camera_ = ensenso_ptr->camera_;
   ensenso_ptr->configureCapture();
   ROS_INFO("Loading json params");
@@ -228,7 +227,7 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   unsigned char *r_image_array = reinterpret_cast<unsigned char *> (&images->second.data[0]);
 
   // ROS_INFO_STREAM("Encoding1: " << images->first.encoding << " | Encoding2: " << images->second.encoding);
-  
+
   int type1 = getOpenCVType (images->first.encoding);
   int type2 = getOpenCVType(images->second.encoding);
 
@@ -236,13 +235,13 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   cv::Mat r_image (images->first.height, images->first.width, type2, r_image_array);
 
   if(images->first.encoding == "CV_8UC3") {
-    type1 = CV_8UC3; 
+    type1 = CV_8UC3;
     encoding = "bgr8";
   }
 
   cv::Mat im (images->first.height, images->first.width * 2, type1);
   cv::Mat left_image(images->first.height, images->first.width, type1);
-  cv::Mat right_image(images->second.height, images->second.width, type2);  
+  cv::Mat right_image(images->second.height, images->second.width, type2);
 
   im.adjustROI (0, 0, 0, -0.5*images->first.width);
   l_image.copyTo (im);
@@ -341,7 +340,7 @@ void callback (const PointCloudT::Ptr& cloud, \
 
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
-  imagePub.publish(msg);  
+  imagePub.publish(msg);
 
   leftImagePub.publish(left_msg);
   rightImagePub.publish(right_msg);
@@ -349,7 +348,7 @@ void callback (const PointCloudT::Ptr& cloud, \
 
 int main (int argc, char** argv)
 {
-  ros::init(argc, argv, "ensensor_bridge_node"); 
+  ros::init(argc, argv, "ensensor_bridge_node");
   ros::start();
   ROS_INFO("Started node %s", ros::this_node::getName().c_str());
 
@@ -365,7 +364,7 @@ int main (int argc, char** argv)
 
   ensenso_ptr->start ();
   ensenso_ptr->registerCallback (f);
-  
+
   ros::spin();
 
   ensenso_ptr->stop ();
@@ -374,4 +373,3 @@ int main (int argc, char** argv)
 
   return EXIT_SUCCESS;
 }
-

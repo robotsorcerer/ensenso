@@ -36,8 +36,8 @@ private:
   /*aliases*/
   using imageMsgSub = message_filters::Subscriber<sensor_msgs::Image>;
   using cloudMsgSub = message_filters::Subscriber<sensor_msgs::PointCloud2>;
-  using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,sensor_msgs::Image>;
-
+  using syncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2,
+                                  sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image>;
   bool running, updateCloud, updateImage, save;
   size_t counter;
   std::ostringstream oss;
@@ -48,7 +48,7 @@ private:
 
   ros::NodeHandle nh;
   std::mutex mutex;
-  cv::Mat ir;
+  cv::Mat ir, leftIr, rightIr;
   std::string windowName;
   const std::string basetopic;
   std::string subNameDepth;
@@ -56,8 +56,8 @@ private:
 
   unsigned long const hardware_threads;
   ros::AsyncSpinner spinner;
-  std::string subNameCloud, subNameIr;
-  imageMsgSub subImageIr;
+  std::string subNameCloud, subNameIr, subNameIrLeft, subNameIrRight;
+  imageMsgSub subImageIr, subImageIrLeft, subImageIrRight;
   cloudMsgSub subCloud;
 
   std::vector<std::thread> threads;
@@ -66,6 +66,7 @@ private:
   message_filters::Synchronizer<syncPolicy> sync;
 
   boost::shared_ptr<visualizer> viz;
+  bool showLeftImage, showRightImage;
 
   // Parameters needed by the range image object:
   // Angular resolution is the angular distance between pixels.
@@ -91,14 +92,20 @@ public:
   cloudName("detector_cloud"), windowName("Ensenso images"), basetopic("/ensenso"),
   hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2),
   subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"),
-  subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),
-  sync(syncPolicy(10), subCloud, subImageIr)
+  subNameIrLeft(basetopic + "/left/image"), subNameIrRight(basetopic + "/right/image"),
+  subImageIr(nh, subNameIr, 1), subImageIrLeft(nh, subNameIrLeft, 1),
+  subImageIrRight(nh, subNameIrRight, 1), subCloud(nh, subNameCloud, 1),
+  sync(syncPolicy(10), subCloud, subImageIr, subImageIrLeft, subImageIrRight)
   {
-    sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
+    sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2, _3, _4));
     ROS_INFO_STREAM("#Hardware Concurrency: " << hardware_threads <<
       "\t. Spinning with " << hardware_threads/4 << " threads");
     params.push_back(cv::IMWRITE_PNG_COMPRESSION);
     params.push_back(3);
+
+    //set ros parameters
+    nh.setParam("showLeftImage", false);
+    nh.setParam("showRightImage", false);
   }
   //destructor
   ~Receiver()
@@ -128,6 +135,10 @@ private:
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+
+    nh.getParam("showLeftImage", showLeftImage);
+    nh.getParam("showRightImage", showRightImage);
+
     //spawn the threads
     threads.push_back(std::thread(&Receiver::cloudDisp, this));
     threads.push_back(std::thread(&Receiver::imageDisp, this));
@@ -142,16 +153,25 @@ private:
     running = false;
   }
 
-  void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage)
+  void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage,
+                const sensor_msgs::ImageConstPtr& leftImage, const sensor_msgs::ImageConstPtr& rightImage)
   {
-    cv::Mat ir;
+    cv::Mat ir, leftIr, rightIr;
     PointCloudT cloud;
     getImage(ensensoImage, ir);
     getCloud(ensensoCloud, cloud);
+    if(showLeftImage)
+      getImage(leftImage, leftIr);
+    if(showRightImage)
+      getImage(rightImage, rightIr);
 
     std::lock_guard<std::mutex> lock(mutex);
     this->ir = ir;
     this->cloud = cloud;
+    if(showLeftImage)
+      this->leftIr = leftIr;
+    if(showRightImage)
+      this->rightIr = rightIr;
     updateImage = true;
     updateCloud = true;
   }
@@ -180,10 +200,27 @@ private:
 
   void imageDisp()
   {
-    cv::Mat ir;
+    cv::Mat ir, leftIr, rightIr;
     PointCloudT cloud;
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(windowName, 640, 480) ;
+
+    const std::string leftWindowName = "leftImage";
+    const std::string rightWindowName = "rightImage";
+
+    //left image window
+    if(showLeftImage)
+    {
+      cv::namedWindow(leftWindowName, cv::WINDOW_NORMAL);
+      cv::resizeWindow(leftWindowName, 640, 480);
+    }
+
+    //right image window
+    if(showRightImage)
+    {
+      cv::namedWindow(rightWindowName, cv::WINDOW_NORMAL);
+      cv::resizeWindow(rightWindowName, 640, 480);
+    }
 
     for(; running && ros::ok();)
     {
@@ -191,10 +228,18 @@ private:
       {
         std::lock_guard<std::mutex> lock(mutex);
         ir = this->ir;
+        if(showLeftImage)
+          leftIr = this->leftIr;
+        if(showRightImage)
+          rightIr = this->rightIr;
         cloud = this->cloud;
         updateImage = false;
 
         cv::imshow(windowName, ir);
+        if(showLeftImage)
+          cv::imshow(leftWindowName, leftIr);
+        if(showRightImage)
+          cv::imshow(rightWindowName, rightIr);
       }
 
       int key = cv::waitKey(1);
