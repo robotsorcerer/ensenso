@@ -66,9 +66,5 @@ add_executable(ensenso_detect    ${detect_files})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ensenso_detect
-	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
-)
-
-target_link_libraries(ensenso_detect
-	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} ${catkin_LIBRARIES} -lm -ldl
+	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
 )

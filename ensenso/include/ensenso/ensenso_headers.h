@@ -6,10 +6,10 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 /*
-Without defining boost scoped enums, linking breaks the compilation. 
+Without defining boost scoped enums, linking breaks the compilation.
 See http://stackoverflow.com/questions/15634114/cant-link-program-using-boost-filesystem
 */
-#define BOOST_NO_CXX11_SCOPED_ENUMS		
+#define BOOST_NO_CXX11_SCOPED_ENUMS
 #include <boost/filesystem.hpp>
 #undef BOOST_NO_CXX11_SCOPED_ENUMS
 #include <boost/tuple/tuple.hpp>
@@ -26,18 +26,18 @@ using PointCloudTPtr  = PointCloudT::Ptr;
 //Forward Declarations
 namespace pathfinder
 {
-  static bool getROSPackagePath(const std::string pkgName, 
+  bool getROSPackagePath(const std::string pkgName, 
   								boost::filesystem::path & pkgPath);
 
   static bool copyDirectory(const boost::filesystem::path srcPath,
-  							 const boost::filesystem::path dstPath);  
+  							 const boost::filesystem::path dstPath);
 
   bool cloudsAndImagesPath(boost::filesystem::path & imagesPath, \
-  							boost::filesystem::path & cloudsPath, 
+  							boost::filesystem::path & cloudsPath,
   							const std::string& pkgName = "ensenso");
 
   std::tuple<boost::filesystem::path, const std::string&, const std::string&,
-        	const std::string&, const std::string&, const std::string&, 
+        	const std::string&, const std::string&, const std::string&,
         	const std::string&> getCurrentPath();
 
   bool getDataDirectory(boost::filesystem::path data_dir);
@@ -45,7 +45,7 @@ namespace pathfinder
 
 namespace generic
 {
-	/** @brief Gets the orientation quaternion of a mesh model such that the z-axis is 
+	/** @brief Gets the orientation quaternion of a mesh model such that the z-axis is
 	 *   normal to the plane, and the x-y
 	 *   axis are as close as possible to the the table frame
 	 *
@@ -66,14 +66,14 @@ namespace generic
     *
     * \returns quaternion   The quaternion that aligns axis1 with vector1 and has axis2 as close to vector2 as possible
     * */
-	tf::Quaternion getQuaternionFromVectors (const Eigen::Vector3d vector1, 
+	tf::Quaternion getQuaternionFromVectors (const Eigen::Vector3d vector1,
 		const int axis1, const Eigen::Vector3d vector2, const int axis2);
 
   /* @brief given an angle in radians, it converts it to degrees
   *  @param[in] phi angle in radians
   *  @param[out] phi angle in degrees
-  *  @warning, the nagle is changed in place 
-  * @note thatthe function is defined here because gnu coompilers 
+  *  @warning, the nagle is changed in place
+  * @note thatthe function is defined here because gnu coompilers
   * do not do whole optizations
   */
   inline void rad2deg(double& phi)
@@ -83,13 +83,13 @@ namespace generic
 
   void savefaces(const pcl::PointCloud<pcl::PointXYZ>::Ptr faces);
   void savepoints(Eigen::Vector4d &centroid);
-  /** @brief find the maximum point within a point cloud 
-   * @param[in] pointer to pointcloud 
+  /** @brief find the maximum point within a point cloud
+   * @param[in] pointer to pointcloud
    * @return maximum point in the cloud
    *
    * @warning This algorithm is O(n)
    */
-  double findMax(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds, 
+  double findMax(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds,
           pcl::PointCloud<pcl::PointXYZ>::Ptr biggestCluster);
 
   Eigen::Vector4d findMaxPoint(pcl::PointCloud<pcl::PointXYZ>::Ptr clouds);

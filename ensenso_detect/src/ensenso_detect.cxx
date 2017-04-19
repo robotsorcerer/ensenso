@@ -22,6 +22,9 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/gpu/gpu.hpp>
+
 /*Globlal namespaces and aliases*/
 using namespace pathfinder;
 
@@ -84,6 +87,11 @@ private:
   boost::shared_ptr<pcl::RangeImage> range_image_ptr;
   pcl::RangeImage rangeImage;
 
+  cv::String faceCascadeName, eyesCascadeName;
+  cv::gpu::CascadeClassifier_GPU faceCascade, eyesCascade;
+
+  //used to look up detected eye feature in pcl
+  std::tuple<int, int> faceFeature;
 
 public:
   //constructor
@@ -198,6 +206,94 @@ private:
     pcl::fromPCLPointCloud2(pcl_pc, pcl_cloud);
   }
 
+  bool populateCascadeNames()
+  {
+    const std::string pkgName = "ensenso_detect";
+    boost::filesystem::path ensensoDetectPath, cascadesPath;
+    if(!getROSPackagePath(pkgName, ensensoDetectPath))
+    {
+      ROS_INFO("Could not find path to ensenso_detect");
+      return false;
+    }
+
+    cascadesPath = ensensoDetectPath / "data";
+    faceCascadeName = cascadesPath.string() + "/haarcascade_frontalface_default.xml";
+    eyesCascadeName = cascadesPath.string() + "/haarcascade_eye.xml";
+
+    return true;
+  }
+
+  void detectAndDisplay( cv::Mat frame )
+  {
+     std::vector<cv::Rect> faces;
+     cv::gpu::GpuMat facesGPU, eyesGPU;
+     cv::Mat frameResized, facesCPU, eyesCPU;
+     double fx, fy = 0;
+     int interpol = cv::INTER_LINEAR;
+     const double scaleFactor = 1.2;
+     const int minNeighbors = 6;
+     const cv::Size faceMaxSize = cv::Size(20, 20);
+     const cv::Size faceMinSize = cv::Size(5, 5);
+
+    if(!populateCascadeNames())
+     ROS_INFO("Could not populate cascades");
+    // else
+    //  OUT("Using the following classifiers \n\t\t" << faceCascadeName << "\n\t\t" << eyesCascadeName);
+
+    if( !faceCascade.load( faceCascadeName ) )
+     ROS_INFO("--(!)Error loading faceCascade");
+    if( !eyesCascade.load( eyesCascadeName ) )
+     ROS_INFO("--(!)Error loading eyesCascade");
+
+    cv::equalizeHist( frame, frame );
+    // cv::resize(frame, frameResized, cv::Size(), fx, fy, interpol);
+
+     cv::gpu::GpuMat frameGPU(frame);
+
+     //preallocate gpu faces
+     facesGPU.create(1, 10000, cv::DataType<cv::Rect>::type);
+
+     //-- Detect faces
+     int facesDetect = faceCascade.detectMultiScale(frameGPU, facesGPU,
+                        faceMaxSize, faceMinSize, scaleFactor, minNeighbors);
+    //Download only detected faces to cpu
+    facesGPU.colRange(0, facesDetect).download(facesCPU);
+
+    frameGPU.release();
+    facesGPU.release();
+
+    cv::Rect* cfaces = facesCPU.ptr<cv::Rect>();
+
+     for( size_t i = 0; i < facesDetect; ++i )
+      {
+        cv::Point vertexOne (cfaces[i].x, cfaces[i].y);
+        cv::Point vertexTwo(cfaces[i].x + cfaces[i].width, cfaces[i].y + cfaces[i].height);
+        cv::rectangle(frame, vertexOne, vertexTwo, cv::Scalar(0, 255, 0), 2, 4, 0 );
+        // cv::rectangle(frameResized, vertexOne, vertexTwo, cv::Scalar(255, 255, 0), 2, 4, 0 );
+
+        cv::Mat faceROI = frameResized(cfaces[i]);
+        cv::gpu::GpuMat faceROIGPU(faceROI);
+
+        int eyesDetect = eyesCascade.detectMultiScale(faceROIGPU, eyesGPU,
+                          faceMaxSize, faceMinSize, scaleFactor, minNeighbors);
+        //download detected eyes to cpu
+        eyesGPU.colRange(0, eyesDetect).download(eyesCPU);
+
+        faceROIGPU.release();
+        eyesGPU.release();
+
+        cv::Rect* ceyes = eyesCPU.ptr<cv::Rect>();
+
+        for(auto j = 0; j < eyesDetect; ++j)
+        {
+          cv::Point eyeCenter((cfaces[i].x + ceyes[j].x + ceyes[j].width/4), (cfaces[i].y + ceyes[j].y + ceyes[j].height/4) );
+          cv::circle( frame, eyeCenter, 4.0, cv::Scalar(255,255,255), CV_FILLED, 8, 0);
+          // cv::circle( frameResized, eyeCenter, 4.0, cv::Scalar(255,255,255), CV_FILLED, 8, 0);
+          faceFeature = std::make_tuple(eyeCenter.x, eyeCenter.y);
+        }
+      }
+  }
+
   void imageDisp()
   {
     cv::Mat ir, leftIr, rightIr;
@@ -228,6 +324,9 @@ private:
       {
         std::lock_guard<std::mutex> lock(mutex);
         ir = this->ir;
+        //detect and display features
+        detectAndDisplay(ir);
+
         if(showLeftImage)
           leftIr = this->leftIr;
         if(showRightImage)
@@ -284,8 +383,8 @@ private:
       if(save)
       {
         save = false;
-        // saveCloudAndImage(*cloud_ptr, ir);
       }
+      // ROS_INFO_STREAM("facFeature: " << cloud_ptr->points(std::get<0>(faceFeature), std::get<1>(faceFeature)));
       viewer->spinOnce(10);
     }
     viewer->close();

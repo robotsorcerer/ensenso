@@ -101,8 +101,8 @@ public:
     sync.registerCallback(boost::bind(&Receiver::callback, this, _1, _2));
     ROS_INFO_STREAM("#Hardware Concurrency: " << hardware_threads <<
       "\t. Spinning with " << hardware_threads/4 << " threads");
-    params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-    params.push_back(3);
+    params.push_back(cv::IMWRITE_JPEG_QUALITY);
+    params.push_back(80);
   }
   //destructor
   ~Receiver()
@@ -193,11 +193,11 @@ private:
     oss.str("");
     oss << counter;
     const std::string baseName = oss.str();
-    const std::string cloud_id = "face_" + baseName + "_cloud.pcd";// baseName + "_cloud.pcd";
-    const std::string imageName = "face_" + baseName + "_image.png";//baseName + "_image.png";
+    // const std::string cloud_id = "face_" + baseName + "_cloud.pcd";
+    const std::string imageName = "face_" + baseName + "_image.jpg";
 
-    ROS_INFO_STREAM("saving cloud: " << cloudName);
-    writer.writeBinary(cloud_id, cloud);
+    // ROS_INFO_STREAM("saving cloud: " << cloudName);
+    // writer.writeBinary(cloud_id, cloud);
     ROS_INFO_STREAM("saving image: " << imageName);
     cv::imwrite(imageName, image, params);
 
