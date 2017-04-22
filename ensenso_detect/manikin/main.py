@@ -169,6 +169,7 @@ def main():
 	parser.add_argument('--maxIter', type=int, default=50)
 	parser.add_argument('--num_iter', type=int, default=5)
 	parser.add_argument('--lr', type=float, default=1e-3)
+	parser.add_argument('--epoch', type=int, default=500)
 	args = parser.parse_args()
 
 	#obtain training and testing data
@@ -193,6 +194,10 @@ def main():
 	# Training
 	for epoch in range(maxIter):
 		for i in range(args.num_iter): #loop 5 times on each bach per epoch
+
+	# Training
+	for epoch in range(epoch):
+		for i in train_X.size(0), 20:
 			images = Variable(train_X)
 			labels = Variable(train_Y)
 

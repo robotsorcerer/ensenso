@@ -1,4 +1,4 @@
-#include <thread>
+include <thread>
 #include <mutex>
 #include <memory>
 #include <chrono>
@@ -315,8 +315,6 @@ private:
 
     if(!populateCascadeNames())
      ROS_INFO("Could not populate cascades");
-    // else
-    //  OUT("Using the following classifiers \n\t\t" << faceCascadeName << "\n\t\t" << eyesCascadeName);
 
     for(; running && ros::ok();)
     {
