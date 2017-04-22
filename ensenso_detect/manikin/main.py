@@ -12,15 +12,16 @@ from os import listdir
 import json
 import time
 import numpy as np
+import os
 
 from random import shuffle
 
 from model import ResNet, ResidualBlock
 
 import sys
-# from IPython.core import ultratb
-# sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-#      color_scheme='Linux', call_pdb=1)
+from IPython.core import ultratb
+sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+     color_scheme='Linux', call_pdb=1)
 
 class loadAndParse():
 
@@ -83,15 +84,11 @@ class loadAndParse():
 		labelsAll = true_labels + fake_labels
 
 		#permute images and labels in place
-		shuffle(imagesAll)
-		# imagesAll = imagesAll[torch.randperm(len(imagesAll))]
-		shuffle(labelsAll)
-		#
-		# for x in range(len(imagesAll)):
-		# 	# print(imagesAll[x].size(0))
-		# 	print(imagesAll[x].size())
-		# 	if x == 5:
-		# 		break
+		temp = list(zip(imagesAll, labelsAll))
+
+		shuffle(temp)
+
+		imagesAll, labelsAll = zip(*temp)
 
 		classes = self.loadLabelsFromJson()
 
@@ -103,7 +100,7 @@ class loadAndParse():
 		# Now preprocess and create list for images
 		for imgs in imagesAll:
 			images_temp = self.preprocess(imgs)
-			# print("size of image, {}, {}", imgs, images_temp.size())
+
 			'''
 			For some reason, not cropping the images makes the dimensions inconsistent
 			Make sure the images are cropped before preprocessing
@@ -112,9 +109,6 @@ class loadAndParse():
 			if images_temp.size(0) == 3:
 				self.fakenreal_images.append(images_temp)
 			# print("size: {} ".format(images_temp.size(0)))
-
-		# for x in range(len(self.fakenreal_images)):
-		# 	print('fake_images size: ', self.fakenreal_images[x].size())
 
 		self.fakenreal_labels = labelsAll
 
@@ -147,7 +141,6 @@ class loadAndParse():
 		#Now copy tensors over
 		train_X = torch.stack(self.fakenreal_images[:X_tr], 0)
 		train_Y = torch.from_numpy(np.array(self.fakenreal_labels[:X_tr]))
-		# print('\ntrain_X {}, train_Y: {}, X_te: {} \n'.format(train_X.size(), train_Y.size(), X_te))
 
 		#testing set
 		test_X = torch.stack(self.fakenreal_images[X_tr:], 0)
@@ -159,6 +152,12 @@ class loadAndParse():
 			print('test_X and test_Y sizes: {} | {}'.format(test_X.size(), test_Y.size()))
 
 		return train_X, train_Y, test_X, test_Y
+
+	def file_exists(file_path):
+	    if not file_path:
+	        return False
+	    else:
+	        return True
 
 def main():
 	parser = argparse.ArgumentParser(description='Process environmental variables')
@@ -209,10 +208,12 @@ def main():
 
 			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.4f" %(epoch+1, args.maxIter, i+batchSize, numIter, loss.data[0]))
 
+			'''
 			# Decaying Learning Rate
 			if (epoch) % 10 == 0:
 				lr /= 3
 				optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
+			'''
 
 	# Test
 	correct = 0
@@ -227,6 +228,10 @@ def main():
 
 	print('Accuracy of the model on the test images: %d %%' %(100 * correct / total))
 
+	#check if there's no pre-existing saved convnet file in dir
+	# if 'resnet.pkl':
+	# 	file_name = 'resnet.pkl'
+	# 	os.rename(file_name, file_name + '.old', None, '../old_pkls')
 	# Save the Model
 	torch.save(resnet.state_dict(), 'resnet.pkl')
 
