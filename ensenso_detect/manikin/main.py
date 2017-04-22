@@ -195,9 +195,6 @@ def main():
 	for epoch in range(maxIter):
 		for i in range(args.num_iter): #loop 5 times on each bach per epoch
 
-	# Training
-	for epoch in range(epoch):
-		for i in train_X.size(0), 20:
 			images = Variable(train_X)
 			labels = Variable(train_Y)
 
@@ -227,7 +224,7 @@ def main():
 		total += labels.size(0)
 		correct += (predicted.cpu() == labels).sum()
 
-	print('Accuracy of the model on the test images: %d %%' % (100 * correct / total))
+	print('Accuracy of the model on the test images: %d %%' %(100 * correct / total))
 
 	# Save the Model
 	torch.save(resnet.state_dict(), 'resnet.pkl')
