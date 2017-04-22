@@ -168,6 +168,7 @@ def main():
 	parser.add_argument('--disp', type=bool, default=False)
 	parser.add_argument('--maxIter', type=int, default=50)
 	parser.add_argument('--num_iter', type=int, default=5)
+	parser.add_argument('--batchSize', type=int, default=31)
 	parser.add_argument('--lr', type=float, default=1e-3)
 	parser.add_argument('--epoch', type=int, default=500)
 	args = parser.parse_args()
@@ -183,20 +184,21 @@ def main():
 		train_X = train_X.cuda()
 		train_Y = train_Y.cuda()
 		test_X = test_X.cuda()
-		test_Y = test_Y.cuda()
 
 	# Loss and Optimizer
 	criterion = nn.CrossEntropyLoss()
 	lr = args.lr
+	batchSize = args.batchSize
 	maxIter = args.maxIter
+	numIter = train_X.size(0)
 	optimizer = torch.optim.Adam(resnet.parameters(), lr=args.lr)
 
 	# Training
-	for epoch in range(maxIter):
-		for i in range(args.num_iter): #loop 5 times on each bach per epoch
+	for epoch in range(maxIter): #run through the images maxIter times
+		for i in range(0, numIter, batchSize): #load a batch of 31 at a time
 
-			images = Variable(train_X)
-			labels = Variable(train_Y)
+			images = Variable(train_X[i:i+batchSize,:,:,:])
+			labels = Variable(train_Y[i:i+batchSize,])
 
 			# Forward + Backward + Optimize
 			optimizer.zero_grad()
@@ -205,8 +207,7 @@ def main():
 			loss.backward()
 			optimizer.step()
 
-			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.4f" %(epoch+1, args.maxIter, i+1, args.num_iter, loss.data[0]))
-			# print('full loss: ' , loss.data)
+			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.4f" %(epoch+1, args.maxIter, i+batchSize, numIter, loss.data[0]))
 
 			# Decaying Learning Rate
 			if (epoch) % 10 == 0:
@@ -216,9 +217,9 @@ def main():
 	# Test
 	correct = 0
 	total = 0
-	for epoch in range(epoch):
+	for epoch in range(maxIter):
 		images = Variable(test_X)
-		labels = Variable(test_Y)
+		labels = test_Y
 		outputs = resnet(images)
 		_, predicted = torch.max(outputs.data, 1)
 		total += labels.size(0)
