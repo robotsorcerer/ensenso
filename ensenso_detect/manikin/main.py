@@ -165,9 +165,9 @@ def main():
 						help='print out shit')
 	parser.add_argument('--cuda', type=bool, default=True)
 	parser.add_argument('--disp', type=bool, default=False)
-	parser.add_argument('--maxIter', type=int, default=50)
+	parser.add_argument('--maxIter', type=int, default=1100)
 	parser.add_argument('--num_iter', type=int, default=5)
-	parser.add_argument('--batchSize', type=int, default=31)
+	parser.add_argument('--batchSize', type=int, default=20)
 	parser.add_argument('--lr', type=float, default=1e-3)
 	parser.add_argument('--epoch', type=int, default=500)
 	args = parser.parse_args()
@@ -208,17 +208,17 @@ def main():
 
 			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.4f" %(epoch+1, args.maxIter, i+batchSize, numIter, loss.data[0]))
 
-			'''
+
 			# Decaying Learning Rate
-			if (epoch) % 10 == 0:
-				lr /= 3
-				optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
-			'''
+			# if (epoch+1) % 20 == 0:
+			# 	lr /= 3
+			# 	optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
+
 
 	# Test
 	correct = 0
 	total = 0
-	for epoch in range(maxIter):
+	for epoch in range(100):
 		images = Variable(test_X)
 		labels = test_Y
 		outputs = resnet(images)
@@ -228,10 +228,6 @@ def main():
 
 	print('Accuracy of the model on the test images: %d %%' %(100 * correct / total))
 
-	#check if there's no pre-existing saved convnet file in dir
-	# if 'resnet.pkl':
-	# 	file_name = 'resnet.pkl'
-	# 	os.rename(file_name, file_name + '.old', None, '../old_pkls')
 	# Save the Model
 	torch.save(resnet.state_dict(), 'resnet.pkl')
 
