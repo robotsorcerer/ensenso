@@ -3,6 +3,7 @@
 import torch
 from os import listdir
 from PIL import Image
+from PIL import ImageFont, ImageDraw
 from torch.autograd import Variable
 import json
 import argparse
@@ -17,10 +18,11 @@ from IPython.core import ultratb
 sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 	 color_scheme='Linux', call_pdb=1)
 
+torch.set_default_tensor_type('torch.DoubleTensor')
 
 class loadAndParse():
 
-	def __init__(self, args, true_path="raw/true/"):
+	def __init__(self, args, true_path="raw/fake/"):
 
 		self.args = args
 		self.normalize = transforms.Normalize(
@@ -45,7 +47,7 @@ class loadAndParse():
 	def loadLabelsFromJson(self):
 		labels_file = open('labels.json').read()
 		labels = json.loads(labels_file)
-		classes = [ labels["0"], labels["1"]]  # 0 = fake, 1=real
+		classes = labels  # 0 = fake, 1=real
 		return classes
 
 	def loadImages(self, path):
@@ -75,7 +77,8 @@ class loadAndParse():
 
 		# Now preprocess and create list for images
 		for imgs in true_images:
-			images_temp = self.preprocess(imgs)
+			# cast to double since preprocess sends to FloatTensor by default
+			images_temp = self.preprocess(imgs).double()
 
 			if images_temp.size(0) == 3:
 				self.real_images.append(images_temp)
@@ -101,7 +104,7 @@ class loadAndParse():
 		Y_tensors = torch.from_numpy(np.array(self.real_labels[:]))
 
 		dataset = data.TensorDataset(X_tensors, Y_tensors)
-		loader   = data.DataLoader(dataset, batch_size=20, shuffle=True)
+		loader   = data.DataLoader(dataset, batch_size=self.args.batchSize, shuffle=True)
 
 		return loader
 
@@ -110,19 +113,40 @@ def main():
 	parser.add_argument('--verbose', type=bool, default=False)
 	parser.add_argument('--epoch', type=int, default=500)
 	parser.add_argument('--disp', type=bool, default=False)
+	parser.add_argument('--cuda', type=bool, default=True)
+	parser.add_argument('--batchSize', type=int, default=1)
+	parser.add_argument('--model', type=str, default='resnet_acc=80_iter=200.pth')
 	args = parser.parse_args()
 
 	lnp = loadAndParse(args)
-	loader = lnp.getImagesAsTensors()
 
-	model = torch.load('models225/resnet_acc=97_iter=1000.pkl')
+	classes = lnp.loadLabelsFromJson()
+	loader  = lnp.getImagesAsTensors()
+#
+	model = torch.load('models225/' + args.model)
+	model.eval()
+
+	if not args.cuda:
+		model.cpu()
 
 	if(args.verbose):
 		print(model)
 
+	#define PIL primitives
+	to_pil = transforms.ToPILImage()
+
 	for images, labels in loader:
-		output = model(Variable(images))
-		print('outputs ')
+		output = model(Variable(images.cuda()))
+		_, predicted = torch.max(output, 1)
+
+		#collect classes
+		classified = predicted.data[0][0]
+		index = int(classified)
+		img_class = classes[str(index)]
+
+		#display image and class
+		# img = to_pil(images)
+		print('class of image', classes[str(index)])
 
 if __name__ == '__main__':
-    main()
+	main()

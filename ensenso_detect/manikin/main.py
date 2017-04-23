@@ -61,7 +61,7 @@ class loadAndParse():
 	def loadLabelsFromJson(self):
 		labels_file = open('labels.json').read()
 		labels = json.loads(labels_file)
-		classes = [ labels["0"], labels["1"]]  # 0 = fake, 1=real
+		classes = labels  # 0 = fake, 1=real
 		return classes
 
 	def loadImages(self, path):
@@ -208,9 +208,9 @@ def main():
 			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.8f" %(epoch+1, args.maxIter, i+1, int(batchSize/2), loss.data[0]))
 
 			# Decaying Learning Rate
-			if (epoch+1) % 50 == 0:
-				lr /= 3
-				optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
+			# if (epoch+1) % 50 == 0:
+			# 	lr /= 3
+			# 	optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
 
 	# Test
 	correct = 0
@@ -228,7 +228,8 @@ def main():
 	print('Accuracy of the model on the test images: %d %%' %(100 * correct / total))
 
 	# Save the Model
-	torch.save(resnet.state_dict(), 'resnet.pkl')
+	# torch.save(resnet.state_dict(), 'resnet.pkl')
+	torch.save(resnet, 'resnet.pth')
 
 if __name__=='__main__':
 	main()
