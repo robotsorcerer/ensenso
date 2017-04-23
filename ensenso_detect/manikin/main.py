@@ -163,7 +163,7 @@ def main():
 						help='print out shit')
 	parser.add_argument('--cuda', type=bool, default=True)
 	parser.add_argument('--disp', type=bool, default=False)
-	parser.add_argument('--maxIter', type=int, default=1100)
+	parser.add_argument('--maxIter', type=int, default=1000)
 	parser.add_argument('--num_iter', type=int, default=5)
 	parser.add_argument('--batchSize', type=int, default=20)
 	parser.add_argument('--lr', type=float, default=1e-3)
@@ -204,9 +204,8 @@ def main():
 			loss = criterion(outputs, labels)
 			loss.backward()
 			optimizer.step()
-			numIter = train_X.size(0)
 
-			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.8f" %(epoch+1, args.maxIter, i+1, numIter, loss.data[0]))
+			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.8f" %(epoch+1, args.maxIter, i+1, int(batchSize/2), loss.data[0]))
 
 			# Decaying Learning Rate
 			if (epoch+1) % 50 == 0:
