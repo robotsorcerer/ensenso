@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
+import torch.utils.data as data
 import numpy as np
 from torch.autograd import Variable
 from PIL import Image
@@ -13,6 +14,7 @@ import json
 import time
 import numpy as np
 import os
+# import setGPU
 
 from random import shuffle
 
@@ -22,6 +24,9 @@ import sys
 from IPython.core import ultratb
 sys.excepthook = ultratb.FormattedTB(mode='Verbose',
      color_scheme='Linux', call_pdb=1)
+
+
+torch.set_default_tensor_type('torch.DoubleTensor')
 
 class loadAndParse():
 
@@ -85,9 +90,7 @@ class loadAndParse():
 
 		#permute images and labels in place
 		temp = list(zip(imagesAll, labelsAll))
-
 		shuffle(temp)
-
 		imagesAll, labelsAll = zip(*temp)
 
 		classes = self.loadLabelsFromJson()
@@ -99,26 +102,15 @@ class loadAndParse():
 
 		# Now preprocess and create list for images
 		for imgs in imagesAll:
-			images_temp = self.preprocess(imgs)
-
 			'''
 			For some reason, not cropping the images makes the dimensions inconsistent
 			Make sure the images are cropped before preprocessing
 			We will not include those in our training and testing images
 			'''
+			images_temp = self.preprocess(imgs).double()
 			if images_temp.size(0) == 3:
 				self.fakenreal_images.append(images_temp)
-			# print("size: {} ".format(images_temp.size(0)))
-
 		self.fakenreal_labels = labelsAll
-
-		if self.args.disp:
-			print(fakenreal_images[240])
-
-		if self.args.verbose:
-			# #be sure the images are properly loaded in memory
-			print("\nTotal # of AllTensors: {}, images size: {}".format(len(self.fakenreal_images),
-										self.fakenreal_images[64].size()))
 
 	def partitionData(self):
 		# retrieve the images first
@@ -141,17 +133,23 @@ class loadAndParse():
 		#Now copy tensors over
 		train_X = torch.stack(self.fakenreal_images[:X_tr], 0)
 		train_Y = torch.from_numpy(np.array(self.fakenreal_labels[:X_tr]))
+		train_dataset =  data.TensorDataset(train_X, train_Y)
+		train_loader = data.DataLoader(train_dataset,
+						batch_size=self.args.batchSize, shuffle=True)
 
 		#testing set
 		test_X = torch.stack(self.fakenreal_images[X_tr:], 0)
 		test_Y = torch.from_numpy(np.array(self.fakenreal_labels[X_tr+1:]))
+		test_dataset = data.TensorDataset(test_X, test_Y)
+		test_loader = data.DataLoader(test_dataset,
+							batch_size=self.args.batchSize, shuffle=True)
 
 		#check size of slices
 		if self.args.verbose:
 			print('train_X and train_Y sizes: {} | {}'.format(train_X.size(), train_Y.size()))
 			print('test_X and test_Y sizes: {} | {}'.format(test_X.size(), test_Y.size()))
 
-		return train_X, train_Y, test_X, test_Y
+		return train_loader, test_loader
 
 	def file_exists(file_path):
 	    if not file_path:
@@ -174,30 +172,31 @@ def main():
 
 	#obtain training and testing data
 	lnp = loadAndParse(args)
-	train_X, train_Y, test_X, test_Y = lnp.partitionData()
+	train_loader, test_loader = lnp.partitionData()
 
 	#obtain model
 	resnet = ResNet(ResidualBlock, [3, 3, 3])
-	if(args.cuda):
-		resnet = resnet.cuda()
-		train_X = train_X.cuda()
-		train_Y = train_Y.cuda()
-		test_X = test_X.cuda()
 
 	# Loss and Optimizer
 	criterion = nn.CrossEntropyLoss()
 	lr = args.lr
 	batchSize = args.batchSize
 	maxIter = args.maxIter
-	numIter = train_X.size(0)
 	optimizer = torch.optim.Adam(resnet.parameters(), lr=args.lr)
 
 	# Training
 	for epoch in range(maxIter): #run through the images maxIter times
-		for i in range(0, numIter, batchSize): #load a batch of 31 at a time
+		for i, (train_X, train_Y) in enumerate(train_loader):
 
-			images = Variable(train_X[i:i+batchSize,:,:,:])
-			labels = Variable(train_Y[i:i+batchSize,])
+			if(args.cuda):
+				train_X = train_X.cuda()
+				train_Y = train_Y.cuda()
+				resnet  = resnet.cuda()
+
+			# images = Variable(train_X[i:i+batchSize,:,:,:])
+			# labels = Variable(train_Y[i:i+batchSize,])
+			images = Variable(train_X)
+			labels = Variable(train_Y)
 
 			# Forward + Backward + Optimize
 			optimizer.zero_grad()
@@ -205,20 +204,21 @@ def main():
 			loss = criterion(outputs, labels)
 			loss.backward()
 			optimizer.step()
+			numIter = train_X.size(0)
 
-			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.4f" %(epoch+1, args.maxIter, i+batchSize, numIter, loss.data[0]))
-
+			print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.8f" %(epoch+1, args.maxIter, i+1, numIter, loss.data[0]))
 
 			# Decaying Learning Rate
-			# if (epoch+1) % 20 == 0:
-			# 	lr /= 3
-			# 	optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
-
+			if (epoch+1) % 50 == 0:
+				lr /= 3
+				optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
 
 	# Test
 	correct = 0
 	total = 0
-	for epoch in range(100):
+	for test_X, test_Y in test_loader:
+		if(args.cuda):
+			test_X = test_X.cuda()
 		images = Variable(test_X)
 		labels = test_Y
 		outputs = resnet(images)

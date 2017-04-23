@@ -115,7 +115,7 @@ def main():
 	lnp = loadAndParse(args)
 	loader = lnp.getImagesAsTensors()
 
-	model = torch.load('models225/resnet.pkl_acc=97_iter=1000')
+	model = torch.load('models225/resnet_acc=97_iter=1000.pkl')
 
 	if(args.verbose):
 		print(model)

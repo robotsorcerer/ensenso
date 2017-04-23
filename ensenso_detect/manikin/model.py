@@ -5,6 +5,8 @@ import torch.optim as optim
 from torch.autograd import Variable
 from random import shuffle
 
+torch.set_default_tensor_type('torch.DoubleTensor')
+
 # 3x3 Convolution
 def conv3x3(in_channels, out_channels, stride=1):
     return nn.Conv2d(in_channels, out_channels, kernel_size=3,
