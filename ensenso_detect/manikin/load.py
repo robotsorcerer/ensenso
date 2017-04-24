@@ -18,6 +18,8 @@ from IPython.core import ultratb
 sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 	 color_scheme='Linux', call_pdb=1)
 
+from model import ResNet, ResidualBlock
+
 torch.set_default_tensor_type('torch.DoubleTensor')
 
 class loadAndParse():
@@ -114,6 +116,7 @@ def main():
 	parser.add_argument('--epoch', type=int, default=500)
 	parser.add_argument('--disp', type=bool, default=False)
 	parser.add_argument('--cuda', type=bool, default=True)
+	parser.add_argument('--pkl_model', type=bool, default=True)
 	parser.add_argument('--batchSize', type=int, default=1)
 	parser.add_argument('--model', type=str, default='resnet_acc=80_iter=200.pth')
 	args = parser.parse_args()
@@ -122,9 +125,14 @@ def main():
 
 	classes = lnp.loadLabelsFromJson()
 	loader  = lnp.getImagesAsTensors()
-#
-	model = torch.load('models225/' + args.model)
-	model.eval()
+
+	model = None
+	if args.pkl_model:
+		model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
+		model.load_state_dict(torch.load('models_good/' + 'resnet_acc=97_iter=1000.pkl'))
+	else:
+		model = torch.load('models225/' + args.model)
+		model.eval()
 
 	if not args.cuda:
 		model.cpu()
@@ -134,7 +142,7 @@ def main():
 
 	#define PIL primitives
 	to_pil = transforms.ToPILImage()
-
+	print('using model', model)
 	for images, labels in loader:
 		output = model(Variable(images.cuda()))
 		_, predicted = torch.max(output, 1)
@@ -145,7 +153,6 @@ def main():
 		img_class = classes[str(index)]
 
 		#display image and class
-		# img = to_pil(images)
 		print('class of image', classes[str(index)])
 
 if __name__ == '__main__':
