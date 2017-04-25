@@ -23,7 +23,7 @@ from model import ResNet, ResidualBlock
 import sys
 from IPython.core import ultratb
 sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-     color_scheme='Linux', call_pdb=1)
+	 color_scheme='Linux', call_pdb=1)
 
 
 torch.set_default_tensor_type('torch.DoubleTensor')
@@ -152,10 +152,10 @@ class loadAndParse():
 		return train_loader, test_loader
 
 	def file_exists(file_path):
-	    if not file_path:
-	        return False
-	    else:
-	        return True
+		if not file_path:
+			return False
+		else:
+			return True
 
 def main():
 	parser = argparse.ArgumentParser(description='Process environmental variables')
@@ -225,11 +225,13 @@ def main():
 		total += labels.size(0)
 		correct += (predicted.cpu() == labels).sum()
 
-	print('Accuracy of the model on the test images: %d %%' %(100 * correct / total))
+	score = 100 * correct / total
+
+	print('Accuracy of the model on the test images: %d %%' %(score))
 
 	# Save the Model
-	# torch.save(resnet.state_dict(), 'resnet.pkl')
-	torch.save(resnet, 'resnet.pth')
+	torch.save(resnet.state_dict(), 'resnet_'+ score + '%_epoch_' + args.maxIter)
+	# torch.save(resnet, 'resnet.pth')
 
 if __name__=='__main__':
 	main()
