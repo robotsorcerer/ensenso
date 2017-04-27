@@ -8,7 +8,7 @@
 # By Melissa Tanner, mmtanner@caltech.edu, April 2015
 
 import rospy
-import cv2, cv
+import cv2
 import numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
@@ -30,8 +30,8 @@ class Image_Processor:
             try:
                  # might need to change to bgr for color cameras
                 img = self.cvbridge.imgmsg_to_cv2(rosimg, 'passthrough')
-            except CvBridgeError, e:
-                rospy.logwarn ('Exception converting background image from ROS to opencv:  %s' % e)
+            except CvBridgeError:
+                rospy.logwarn ('Exception converting background image from ROS to opencv:  ')
                 img = np.zeros((320,240))
 
             #Display
@@ -50,7 +50,7 @@ def main():
     rospy.spin()
   except KeyboardInterrupt:
     print("Shutting down")
-  cv.DestroyAllWindows()
+  cv2.DestroyAllWindows()
 
 ################################################################################
 if __name__ == '__main__':
