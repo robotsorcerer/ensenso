@@ -29,7 +29,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 
 # neural net utils
-# from utils import ResNet, ResidualBlock
+from utils import ResNet, ResidualBlock
 
 parser = argparse.ArgumentParser(description="Process the environmental vars")
 parser.add_argument("--verbose", type=bool, default=False)

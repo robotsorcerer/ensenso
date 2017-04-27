@@ -28,6 +28,7 @@ pkg_search_module(Eigen3 REQUIRED eigen3)
 find_library(PCL /usr/local/lib NO_DEFAULT_PATH)
 
 find_package(catkin REQUIRED COMPONENTS
+	message_generation
   roscpp
   rospy
   sensor_msgs
@@ -41,14 +42,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   roslib
   std_msgs
-  message_generation
 )
-
-find_package(Ensenso)
-find_package(Boost COMPONENTS filesystem system serialization
-thread REQUIRED)
-find_package(MySQL REQUIRED)
-find_package(OpenCV REQUIRED)
 
 add_message_files(
 FILES
@@ -60,12 +54,30 @@ DEPENDENCIES
 std_msgs
 )
 
+catkin_package(
+	INCLUDE_DIRS include
+	 CATKIN_DEPENDS message_runtime #roscpp rospy sensor_msgs message_filters
+	 #std_msgs tf  tf_conversions cv_bridge
+	LIBRARIES pathfinder savgol boostsender
+)
+
+
+find_package(Boost COMPONENTS filesystem system serialization
+thread REQUIRED)
+find_package(MySQL REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(Ensenso)
+
+
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
+
+include_directories(include
+  ${catkin_INCLUDE_DIRS}
+)
 
 include_directories(
   ${Boost_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
-  ${catkin_INCLUDE_DIRS}
   ${ensenso_INCLUDE_DIRS}
   ${MYSQL_INCLUDE_DIRECTORIES}
 )
@@ -91,16 +103,13 @@ if(ENSENSO_FOUND)
   #                  src/factory_functions.cxx
   #                   src/pathfinder.cxx)
 
-  catkin_package(
-    INCLUDE_DIRS include
-     CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
-		 message_runtime std_msgs tf  tf_conversions
-     LIBRARIES pathfinder savgol boostsender
-  )
-
-  add_library(savgol src/savgol.cxx)
   add_library(pathfinder src/pathfinder.cxx src/factory_functions.cxx)
+  add_library(savgol src/savgol.cxx)
   add_library(boostsender src/boost_sender.cxx)
+
+	add_dependencies(boostsender ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+	# add_dependencies(boostsender ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+	# add_dependencies(pathfinder ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
   ## Declare a C++ executable
   add_executable(ensenso_bridge ${bridge_files})
