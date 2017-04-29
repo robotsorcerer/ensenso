@@ -54,7 +54,9 @@ For 3D visualization, we need OpenGL 3.0 compatible graphics card and drivers. A
 
 #####   Point Clouds Library
 
-  The sensor requires pcl-1.8.0.  Clone the 1.8.0 trunk from the [pcl github repo](https://github.com/PointCloudLibrary/pcl/tree/pcl-1.8.0), then follow the readme instructions to install. A good place to install might be in your Documents directory. After installing, be sure to set the directory of the cmake pcl config file to that where the libraries are installed in the `CMakeLists.txt`. For example, the config file could be at `/usr/local/share/pcl-1.8/PCLConfig.cmake`. Go to the CMakeLists.txt file within the root directory of this project and amend the PCL directory/path to the one where your installer saves it (you can easily find this in the `installer_manifest.txt` file of your build directory).
+  The sensor requires pcl-1.8.0.  Clone the 1.8.0 trunk from the [pcl github repo](https://github.com/PointCloudLibrary/pcl/tree/pcl-1.8.0), then follow the readme instructions to install. Remember to turn on `ensenso` features during compilation e.g. `cmake -D WITH_ENSENO=ON ../` from your build directory.
+
+  A good place to install might be in your Documents directory. After installing, be sure to set the directory of the cmake pcl config file to that where the libraries are installed in the `CMakeLists.txt`. For example, the config file could be at `/usr/local/share/pcl-1.8/PCLConfig.cmake`. Go to the CMakeLists.txt file within the root directory of this project and amend the PCL directory/path to the one where your installer saves it (you can easily find this in the `installer_manifest.txt` file of your build directory).
 
 ##### Optional Dependencies
 

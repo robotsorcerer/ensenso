@@ -24,6 +24,10 @@
 
 - Opencv Conda with HighGUI Supoport. See [this](http://stackoverflow.com/questions/24400935/how-could-we-install-opencv-on-anaconda).
 
+
+```bash
+  conda install -c loopbio ffmpeg-feature gtk2-feature opencv
+```
 <!-- Install from the conda 3rd party repos
 
 ```bash
