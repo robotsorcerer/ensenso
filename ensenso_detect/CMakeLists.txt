@@ -12,10 +12,6 @@ find_package(PkgConfig)
 pkg_search_module(Eigen3 REQUIRED eigen3)
 
 find_library(PCL /usr/local/lib NO_DEFAULT_PATH)
-
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   ensenso
   image_transport
@@ -52,9 +48,6 @@ add_definitions(${PCL_DEFINITIONS})
 ## Declare executable source files
 set(detect_files src/ensenso_detect.cxx)
 
-#add correspondence grouping library
-# add_library(savgol src/savgol.cxx)
-
 catkin_package(
 	INCLUDE_DIRS include
 	 CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
@@ -62,9 +55,9 @@ catkin_package(
 )
 
 ## Declare a C++ executable
-add_executable(ensenso_detect    ${detect_files})
+# add_executable(ensenso_detect    ${detect_files})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(ensenso_detect
-	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
-)
+# target_link_libraries(ensenso_detect
+# 	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
+# )

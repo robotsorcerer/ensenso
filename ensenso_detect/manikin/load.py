@@ -201,6 +201,7 @@ def main():
 	if (ext == ".pkl"):  #using high score model
 		model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
 		model.load_state_dict(torch.load('models225/' + args.model))
+		print(model.load_state_dict(torch.load('models225/' + args.model)))
 	else:
 		model = torch.load('models225/' + args.model)
 		model.eval()
