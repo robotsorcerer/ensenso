@@ -165,14 +165,6 @@ class ProcessImage(ROS_Subscriber):
 		else:
 			self.ensenso_image = self.get_ensenso_image()
 
-		#Display
-		if self.args.show:
-			cv2.namedWindow('image', cv2.WINDOW_NORMAL)
-			cv2.imshow('image', self.ensenso_image)
-			ch = 0xFF & cv2.waitKey(5)
-			if ch == 27:
-				rospy.signal_shutdown("rospy is shutting down")
-
 		'''convert retrieved open cv image to torch tensors'''
 		# first allocate tensor storage object
 		self.rawImgTensor = torch.LongTensor(1024, 1280)
@@ -201,15 +193,27 @@ class ProcessImage(ROS_Subscriber):
 
 		labels = test_Y
 		outputs = resnet(images)
-		_, predicted = torch.max(outputs.data, 1)
+		_, predicted = torch.max(outputs, 1)
 
 		#collect classes
-		classified = predicted[0][0]
+		classified = predicted.data[0][0]
 		index = int(classified)
 
 		img_class = self.classes[str(index)]
 
-		print('I see a {} face'.format(self.classes[str(index)]))
+		#Display
+		if self.args.show:
+			cv2.namedWindow('image', cv2.WINDOW_NORMAL)
+			#putText Properties
+			org = img_class + ' face'
+			cv2.putText(self.ensenso_image, org, (15, 55), cv2.FONT_HERSHEY_PLAIN, 3.5, (255, 0, 3), thickness=2, lineType=cv2.LINE_AA)
+			cv2.imshow('image', self.ensenso_image)
+
+			ch = 0xFF & cv2.waitKey(5)
+			if ch == 27:
+				rospy.signal_shutdown("rospy is shutting down")
+
+		# print('I see a {} face'.format(self.classes[str(index)]))
 
 
 	def retrieve_net(self, model):
