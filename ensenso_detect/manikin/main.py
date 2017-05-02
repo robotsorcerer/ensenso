@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import argparse
 import torch
@@ -25,12 +25,22 @@ from IPython.core import ultratb
 sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 	 color_scheme='Linux', call_pdb=1)
 
+parser = argparse.ArgumentParser(description='Process environmental variables')
+parser.add_argument('--cuda', type=bool, default=True)
+parser.add_argument('--disp', type=bool, default=False)
+parser.add_argument('--maxIter', type=int, default=1000)
+parser.add_argument('--num_iter', type=int, default=5)
+parser.add_argument('--batchSize', type=int, default=20)
+parser.add_argument('--lr', type=float, default=1e-3)
+parser.add_argument('--epoch', type=int, default=500)
+parser.add_argument('--verbose', type=bool, default=False)
+args = parser.parse_args()
 
 torch.set_default_tensor_type('torch.DoubleTensor')
 
-class loadAndParse():
+class loadAndParse(object):
 
-	def __init__(self, args, true_path="raw/true/", fake_path="raw/fake/"):
+	def __init__(self, args, true_path="raw/face_pos/", fake_path="raw/face_neg/"):
 		'''
 		from:
 		https://github.com/pytorch/examples/blob/409a7262dcfa7906a92aeac25ee7d413baa88b67/imagenet/main.py#L108-L113
@@ -51,6 +61,15 @@ class loadAndParse():
 
 		#provide path to true and fake images
 		self.true_path= true_path
+
+		pwd = os.getcwd()
+		face_neg = pwd + "/raw/" + "face_neg"
+		face_neg_1 = face_neg + '/' + 'neg_1'
+		face_neg_2 = face_neg + '/' + 'neg_2'
+		face_neg_3 = face_neg + '/' + 'neg_3'
+		face_neg_4 = face_neg + '/' + 'neg_4'
+
+		self.neg_dirs = [face_neg_1, face_neg_2, face_neg_3, face_neg_4]
 		self.fake_path= fake_path
 
 		#define tensors to hold the images in memory
@@ -66,7 +85,6 @@ class loadAndParse():
 
 	def loadImages(self, path):
 		# return array of images
-
 		imagesList = listdir(path)
 		loadedImages = []
 		for image in imagesList:
@@ -75,11 +93,23 @@ class loadAndParse():
 
 		return loadedImages
 
+	def load_negative(self):
+		negative_list = []
+		for dirs in self.neg_dirs:
+			for img_path in listdir(dirs):
+				base, ext = os.path.splitext(img_path)
+				if ext == '.jpg':
+					img = Image.open(dirs + '/' + img_path)
+					negative_list.append(img)
+					if self.args.verbose:
+						print('appending {} to {} list'.format(img_path, 'negative'))
+		return negative_list
+
 	# get images in the dir
 	def getImages(self):
 		#load images
 		true_images = self.loadImages(self.true_path)
-		fake_images = self.loadImages(self.fake_path)
+		fake_images = self.load_negative()
 
 		#define labels
 		true_labels = [1]*len(true_images)  #faces
@@ -102,14 +132,12 @@ class loadAndParse():
 
 		# Now preprocess and create list for images
 		for imgs in imagesAll:
-			'''
-			For some reason, not cropping the images makes the dimensions inconsistent
-			Make sure the images are cropped before preprocessing
-			We will not include those in our training and testing images
-			'''
 			images_temp = self.preprocess(imgs).double()
-			if images_temp.size(0) == 3:
-				self.fakenreal_images.append(images_temp)
+
+			#Take care of non-singleton dimensions in negative images
+			if not images_temp.size(0) == 3:
+				images_temp = images_temp.expand(3, images_temp.size(1), images_temp.size(2))
+			self.fakenreal_images.append(images_temp)
 		self.fakenreal_labels = labelsAll
 
 	def partitionData(self):
@@ -139,7 +167,8 @@ class loadAndParse():
 
 		#testing set
 		test_X = torch.stack(self.fakenreal_images[X_tr:], 0)
-		test_Y = torch.from_numpy(np.array(self.fakenreal_labels[X_tr+1:]))
+		test_Y = torch.from_numpy(np.array(self.fakenreal_labels[X_tr:]))
+
 		test_dataset = data.TensorDataset(test_X, test_Y)
 		test_loader = data.DataLoader(test_dataset,
 							batch_size=self.args.batchSize, shuffle=True)
@@ -158,18 +187,6 @@ class loadAndParse():
 			return True
 
 def main():
-	parser = argparse.ArgumentParser(description='Process environmental variables')
-	parser.add_argument('--verbose', type=bool, default=False,
-						help='print out shit')
-	parser.add_argument('--cuda', type=bool, default=True)
-	parser.add_argument('--disp', type=bool, default=False)
-	parser.add_argument('--maxIter', type=int, default=1000)
-	parser.add_argument('--num_iter', type=int, default=5)
-	parser.add_argument('--batchSize', type=int, default=20)
-	parser.add_argument('--lr', type=float, default=1e-3)
-	parser.add_argument('--epoch', type=int, default=500)
-	args = parser.parse_args()
-
 	#obtain training and testing data
 	lnp = loadAndParse(args)
 	train_loader, test_loader = lnp.partitionData()

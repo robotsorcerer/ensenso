@@ -4,6 +4,8 @@
 from __future__ import print_function
 
 """OpenCV loader of pcl topic
+   ConvNet Classifier of Manikin Face
+   Detector of Face Features
 """
 __author__ = 'Olalekan Ogunmolu <Olalekan.Ogunmolu@utdallas.edu>'
 __version__ = '0.1'
@@ -37,9 +39,9 @@ import torchvision.transforms as transforms
 from utils import ResNet, ResidualBlock
 
 import sys
-from IPython.core import ultratb
-sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-	 color_scheme='Linux', call_pdb=1)
+# from IPython.core import ultratb
+# sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+# 	 color_scheme='Linux', call_pdb=1)
 
 def str2bool(v):
 	if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -116,7 +118,6 @@ class ROS_Subscriber(object):
 			self.img = np.zeros((320,240))
 
 	def get_ensenso_image(self):
-		# print('called get_ensenso_image')
 		return self.img
 
 	def process_image(self):
@@ -141,12 +142,18 @@ class ProcessImage(ROS_Subscriber):
 		self.args = args
 		self.counter = 0
 
+		self.normalize = transforms.Normalize(
+		   mean=[0.485, 0.456, 0.406],
+		   std=[0.229, 0.224, 0.225]
+		)
+
 		self.preprocess = transforms.Compose([
 		   transforms.ToPILImage(),
 		   transforms.Scale(40),
 		   transforms.RandomHorizontalFlip(),
 		   transforms.RandomCrop(32),
 		   transforms.ToTensor()
+		#    self.normalize
 		])
 
 		labels_path = self.getPackagePath('ensenso_detect') + '/manikin/labels.json'
@@ -157,6 +164,23 @@ class ProcessImage(ROS_Subscriber):
 		path = rospack.get_path(package_name)
 		return path
 
+	def retrieve_net(self, model):
+		# get ensenso_detect path
+		detect_package_path = self.getPackagePath('ensenso_detect')
+		weightspath = detect_package_path + '/manikin/models225/'
+
+		base, ext = os.path.splitext(args.net_model)
+		print(ext)
+		if (ext == ".pkl"):  #using high score model
+			model.load_state_dict(torch.load(weightspath + args.net_model))
+			model.eval()  #critical. Not doing this leads to wrong classification
+		else:
+			model = torch.load(weightspath + args.net_model)
+			model.eval()
+			#
+			# rospy.logwarn("supplied neural net extension is unknown")
+		print(model)
+		return model
 
 	def process_image(self):
 
@@ -170,20 +194,17 @@ class ProcessImage(ROS_Subscriber):
 		self.rawImgTensor = torch.LongTensor(1024, 1280)
 		# then copy imgs over
 		self.rawImgTensor = torch.from_numpy(self.ensenso_image)
-		self.raw_size = [int(x) for x in self.rawImgTensor.size()]
+		raw_size = [int(x) for x in self.rawImgTensor.size()]
 		# we need to resize the raw image to the size of the trained net
-		self.rawImgTensor = self.rawImgTensor.unsqueeze(0).expand(3, self.raw_size[0], self.raw_size[1])
+		self.rawImgTensor = self.rawImgTensor.unsqueeze(0).expand(3, raw_size[0], raw_size[1])
 		#convert the tensor to PIL image and back for easy proc by transforms
 		self.rawImgTensor = self.preprocess(self.rawImgTensor.float())
 		self.rawImgTensor = self.rawImgTensor.unsqueeze(0)
 
 	def classify(self):
-
 		#pre-pro images first
+		total, correct = 0,0
 		self.process_image()
-			# Test
-		correct, total = 0, 0
-		resnet = self.args.net
 		test_Y = torch.from_numpy(np.array([0, 1]))#, 0)) #self.loadLabelsFromJson()
 		test_X = self.rawImgTensor.double()
 
@@ -192,56 +213,35 @@ class ProcessImage(ROS_Subscriber):
 		images = Variable(test_X)
 
 		labels = test_Y
-		outputs = resnet(images)
-		_, predicted = torch.max(outputs, 1)
+		outputs = self.args.net(images)
+		_, predicted = torch.max(outputs.data, 1)
+
+		# total += labels.size(0)
+		# correct += (predicted.cpu() == labels).sum
 
 		#collect classes
-		classified = predicted.data[0][0]
-		index = int(classified)
-
+		index = int(predicted[0][0])
 		img_class = self.classes[str(index)]
 
 		#Display
 		if self.args.show:
+
 			cv2.namedWindow('image', cv2.WINDOW_NORMAL)
-			#putText Properties
 			org = img_class + ' face'
-			cv2.putText(self.ensenso_image, org, (15, 55), cv2.FONT_HERSHEY_PLAIN, 3.5, (255, 0, 3), thickness=2, lineType=cv2.LINE_AA)
+			print('{}, Model name: {} '.format(org, args.net_model))
+			cv2.putText(self.ensenso_image, org, (15, 55), cv2.FONT_HERSHEY_PLAIN, 3.5, (255, 150, 0), thickness=2, lineType=cv2.LINE_AA)
 			cv2.imshow('image', self.ensenso_image)
 
 			ch = 0xFF & cv2.waitKey(5)
 			if ch == 27:
 				rospy.signal_shutdown("rospy is shutting down")
 
-		# print('I see a {} face'.format(self.classes[str(index)]))
-
-
-	def retrieve_net(self, model):
-		# get ensenso_detect path
-		detect_package_path = self.getPackagePath('ensenso_detect')
-		weightspath = detect_package_path + '/manikin/models225/'
-
-		base, ext = os.path.splitext(args.net_model)
-		if (ext == ".pkl"):  #using high score model
-			if args.cuda:
-				model.cuda()
-			model.load_state_dict(torch.load(weightspath + args.net_model))
-		elif(ext ==".pth"):
-			model = torch.load(weightspath + args.net_model)
-			if args.cuda:
-				model.cuda()
-			model.eval()
-		else:
-			rospy.logwarn("supplied neural net extension is unknown")
-
-		return model
-
 def main(args):
 	'''Initializes and cleanup ros node'''
 	rospy.init_node('image_feature', anonymous=True)
 
 	proc_img = ProcessImage(args)
-	model = ResNet(ResidualBlock, [3, 3, 3])
+	model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
 	model = proc_img.retrieve_net(model)
 
 	if model:
