@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import torch
 import os
@@ -75,7 +75,7 @@ class Net_SelectiveSequential(nn.Module):
 
 class loadAndParse():
 
-	def __init__(self, args, true_path="raw/true/", fake_path="raw/fake/"):
+	def __init__(self, args, true_path="raw/face_pos/", fake_path="raw/face_pos/"):
 
 		self.args = args
 		self.normalize = transforms.Normalize(
@@ -209,6 +209,12 @@ def main():
 	if not args.cuda:
 		model.cpu()
 
+	#get last layer from resnet
+	last_layer = nn.Sequential(*list(model.children()))[:-1]
+	model.classifier = last_layer
+
+	print(last_layer)
+
 	'''
 	remove last fully connected layer
 	this will contain the features extracted by the convnet
@@ -254,7 +260,7 @@ def main():
 			img_class = classes[str(index)]
 
 			#display image and class
-			print('class of image', classes[str(index)])
+			# print('class of image', classes[str(index)])
 
 		print('\n\ncorrectly classified: %d %%' %(100* corrIdx / Idx) )
 
