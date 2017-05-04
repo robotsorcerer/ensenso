@@ -193,11 +193,11 @@ private:
     oss.str("");
     oss << counter;
     const std::string baseName = oss.str();
-    // const std::string cloud_id = "face_" + baseName + "_cloud.pcd";
+    const std::string cloud_id = "face_" + baseName + "_cloud.pcd";
     const std::string imageName = "face_" + baseName + "_image.jpg";
 
-    // ROS_INFO_STREAM("saving cloud: " << cloudName);
-    // writer.writeBinary(cloud_id, cloud);
+    ROS_INFO_STREAM("saving cloud: " << cloudName);
+    writer.writeBinary(cloud_id, cloud);
     ROS_INFO_STREAM("saving image: " << imageName);
     cv::imwrite(imageName, image, params);
 
@@ -265,9 +265,9 @@ private:
     PointCloudT::Ptr cloud_ptr (&this->cloud);
 
     // Visualize the image.
-    range_image_ptr = boost::shared_ptr<pcl::RangeImage> (new pcl::RangeImage);
-    pcl::RangeImage& range_image = *range_image_ptr;
-    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> range_color_handler (range_image_ptr, 225, 155, 155);
+    // range_image_ptr = boost::shared_ptr<pcl::RangeImage> (new pcl::RangeImage);
+    // pcl::RangeImage& range_image = *range_image_ptr;
+    // pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> range_color_handler (range_image_ptr, 225, 155, 155);
 
     //do range image
     Eigen::Affine3f sensorPose = Eigen::Affine3f(Eigen::Translation3f(cloud_ptr->sensor_origin_[0],
@@ -284,15 +284,15 @@ private:
    	// in the image when it is cropped.
    	int borderSize = 1;
 
-    range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
-									maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
-									noiseLevel, minimumRange, borderSize);
+    // range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
+		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
+		// 							noiseLevel, minimumRange, borderSize);
 
 
     pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 150, 155);
     cv::Mat ir = this->ir;
-    viewer->addPointCloud(range_image_ptr, range_color_handler, cloudName);
-    setViewerPose(*viewer, range_image.getTransformationToWorldSystem());
+    viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
+    // setViewerPose(*viewer, range_image.getTransformationToWorldSystem());
 
     for(; running && ros::ok() ;)
     {
@@ -304,11 +304,11 @@ private:
 
         // ROS_INFO_STREAM(" width: " << cloud_ptr->width << " | height: " << cloud_ptr->height);
 
-        sensorPose = viewer->getViewerPose();
-        range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
-    									maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
-    									noiseLevel, minimumRange, borderSize);
-        viewer->updatePointCloud(range_image_ptr, range_color_handler, cloudName);
+        // sensorPose = viewer->getViewerPose();
+        // range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
+    		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
+    		// 							noiseLevel, minimumRange, borderSize);
+        viewer->updatePointCloud(cloud_ptr, color_handler, cloudName);
       }
       if(save)
       {

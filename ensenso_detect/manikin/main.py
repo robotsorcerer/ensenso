@@ -16,6 +16,10 @@ import numpy as np
 import os
 # import setGPU
 
+from collections import namedtuple
+import numpy as np
+import cv2
+
 from random import shuffle
 
 from model import ResNet, ResidualBlock
@@ -185,6 +189,10 @@ class loadAndParse(object):
 			return False
 		else:
 			return True
+
+
+# define the `Detection` object
+Detection = namedtuple("Detection", ["pos_file_name", "gt", "pred"])
 
 def main():
 	#obtain training and testing data
