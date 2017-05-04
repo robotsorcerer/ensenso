@@ -210,7 +210,7 @@ def main():
 		model.cpu()
 
 	#get last layer from resnet
-	last_layer = nn.Sequential(*list(model.children()))[:-1]
+	last_layer = nn.Sequential(*list(model.children()))
 	model.classifier = last_layer
 
 	print(last_layer)
