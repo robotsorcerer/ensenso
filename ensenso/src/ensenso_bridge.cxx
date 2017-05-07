@@ -27,6 +27,7 @@
 #include <memory>
 #include <fstream>
 #include <algorithm>
+#include <sstream>
 
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
@@ -164,13 +165,15 @@ void initPublishers()
 void readAndLoadParams()
 {
   boost::filesystem::path data_dir, settingsPath;
+  std::stringstream ss;
   pathfinder::getDataDirectory(data_dir);
 
-  settingsPath = data_dir / "settings_face_filled.json";
-  std::string settingsFile = settingsPath.string();
+  // settingsPath = data_dir;
+  ss << data_dir.c_str() << "/ensenso_calib_params.json";
+  std::string settingsFile = ss.str();
 
   ROS_INFO_STREAM("Loading settings file: " << settingsFile);
-  std::ifstream file("~/catkin_ws/src/sensors/ensenso/ensenso_calib_params.json");
+  std::ifstream file(settingsFile);
 
   if (file.is_open() && file.rdbuf())
   {
@@ -178,8 +181,6 @@ void readAndLoadParams()
      std::stringstream buffer;
      buffer << file.rdbuf();
      std::string const& fileContent = buffer.str();
-
-     // ROS_INFO_STREAM("file contents \n"  << fileContent);
 
      NxLibItem tmp("/tmp");
      tmp.setJson(fileContent);

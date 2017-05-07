@@ -51,13 +51,29 @@ set(detect_files src/ensenso_detect.cxx)
 catkin_package(
 	INCLUDE_DIRS include
 	 CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
-	 LIBRARIES pathfinder savgol boostsender
+	 LIBRARIES pathfinder savgol boostsender cv_tools
 )
 
-## Declare a C++ executable
-# add_executable(ensenso_detect    ${detect_files})
+# add_dependencies(bboxes ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-## Specify libraries to link a library or executable target against
-# target_link_libraries(ensenso_detect
-# 	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
-# )
+macro(add_exec name)
+  add_executable(${name} src/${name}.cxx)
+  target_link_libraries(${name} ${catkin_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl)
+endmacro()
+
+
+# add_library(cv_tools src/window_manager.cpp)
+
+# add_dependencies(bboxes ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+# target_link_libraries(cv_tools ${catkin_LIBRARIES} ${OpenCV_LIBS}  -lm -ldl)
+
+# macro(add_lib name)
+#   add_library(${name} src/${name}.cxx)
+#   target_link_libraries(${name} ${catkin_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl)
+# endmacro()
+
+# add_exec(bboxes)
+  add_executable(bboxes src/bboxes.cxx src/window_manager.cpp)
+  target_link_libraries(bboxes ${catkin_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl)
+

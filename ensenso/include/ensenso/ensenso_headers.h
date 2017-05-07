@@ -26,7 +26,7 @@ using PointCloudTPtr  = PointCloudT::Ptr;
 //Forward Declarations
 namespace pathfinder
 {
-  bool getROSPackagePath(const std::string pkgName, 
+  bool getROSPackagePath(const std::string pkgName,
   								boost::filesystem::path & pkgPath);
 
   static bool copyDirectory(const boost::filesystem::path srcPath,
@@ -41,6 +41,8 @@ namespace pathfinder
         	const std::string&> getCurrentPath();
 
   bool getDataDirectory(boost::filesystem::path data_dir);
+
+  // static std::string getDateTimeStr();
 }
 
 namespace generic

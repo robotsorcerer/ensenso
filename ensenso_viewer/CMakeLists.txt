@@ -62,5 +62,5 @@ catkin_package(
 add_executable(ensenso_viewer  ${viewer_files})
 
 target_link_libraries(ensenso_viewer
-	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} ${catkin_LIBRARIES} -lm -ldl
+	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
 )

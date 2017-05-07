@@ -93,7 +93,7 @@ namespace pathfinder
 	std::tuple<boost::filesystem::path, const std::string&, const std::string&,\
 				const std::string&, const std::string&, const std::string&, \
 				const std::string&> getCurrentPath()
-	{	
+	{
 		boost::filesystem::path pwd = boost::filesystem::current_path();
 		const std::string& train_dir = "train";
 		const std::string& test_dir  = "test";
@@ -108,11 +108,11 @@ namespace pathfinder
 			boost::filesystem::create_directory(train_dir);
 			if(!boost::filesystem::exists(train_imgs))
 			{
-				boost::filesystem::create_directory(train_imgs);			
+				boost::filesystem::create_directory(train_imgs);
 			}
 			if(!boost::filesystem::exists(train_clouds))
 			{
-				boost::filesystem::create_directory(train_clouds);			
+				boost::filesystem::create_directory(train_clouds);
 			}
 		}
 
@@ -122,17 +122,21 @@ namespace pathfinder
 			boost::filesystem::create_directory(test_dir);
 			if(!boost::filesystem::exists(test_imgs))
 			{
-				boost::filesystem::create_directory(test_imgs);			
+				boost::filesystem::create_directory(test_imgs);
 			}
 			if(!boost::filesystem::exists(test_clouds))
 			{
-				boost::filesystem::create_directory(test_clouds);			
+				boost::filesystem::create_directory(test_clouds);
 			}
 		}
 
 		return std::make_tuple(pwd, train_dir, train_imgs, train_clouds, \
 						test_dir, test_imgs, test_clouds);
 	}
+
+
+  	// static std::string getDateTimeStr()
+  	// {
+  	// 	//do nothing for now
+  	// }
 }
-
-

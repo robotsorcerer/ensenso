@@ -221,8 +221,6 @@ private:
         cloud = this->cloud;
         updateImage = false;
 
-        // ROS_INFO_STREAM("ir image size: " << ir.size());
-
         cv::imshow(windowName, ir);
       }
 
