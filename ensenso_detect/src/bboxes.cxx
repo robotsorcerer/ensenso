@@ -1,4 +1,5 @@
 #include <iostream>
+#include <typeinfo>
 
 #include "opencv2/highgui.hpp"
 #include "opencv2/imgproc.hpp"
@@ -80,10 +81,10 @@ void CoordinatesPicker::reset()
 
 void CoordinatesPicker::setImageAndWinName( Mat&& _image, string && _winName )
 {
-    if( image->empty() || winName->empty() )
+    if( draw_img.empty() || winName->empty() )
         return;
 
-    image = &_image;
+    draw_img = _image;
     winName = &_winName;
 
     this->reset();
@@ -91,17 +92,16 @@ void CoordinatesPicker::setImageAndWinName( Mat&& _image, string && _winName )
 
 void CoordinatesPicker::showImage() const
 {
-    if( image->empty() || winName->empty() )
+    if( draw_img.empty() || winName->empty() )
         return;
 
     Mat res, mask;
 
     if( !isInitialized )
-        image->copyTo( res );
+        draw_img.copyTo( res );
     else
-        image->copyTo( mask );
+        draw_img.copyTo( mask );
 
-    // vector<Point>::const_iterator it;
     for(auto cit = rightEyePxls.cbegin(); cit != rightEyePxls.cend(); ++cit )
         circle( res, *cit, radius, BLUE, thickness );
 
@@ -125,7 +125,10 @@ void CoordinatesPicker::mouseClick(int event, int x, int y, int flags, void* )
 {
     if (event == cv::EVENT_MOUSEMOVE)    {
         if(draw_pts3d.size() == 4)
-            wm_->destroyAllWindows();
+        {
+            // waitKey(1);
+            // wm_->destroyAllWindows();
+        }
         return;
     }
 
@@ -147,7 +150,6 @@ void CoordinatesPicker::mouseClick(int event, int x, int y, int flags, void* )
         {
             vector<cv::Point2i> p2d(1, cv::Point2i(x,y));
             vector<cv::Point3d> p3d(1);
-            // this->intersectZPlane(draw_prm, draw_height, p2d, p3d);
             point3d = p3d[0];
         }
 //        sprintf(text, "(%3.3f, %3.3f, %3.3f)", point3d.x, point3d.y, point3d.z);
@@ -158,37 +160,75 @@ void CoordinatesPicker::mouseClick(int event, int x, int y, int flags, void* )
         int lineThickness = 2;
         if(draw_pts2d.size() > 1)
             cv::line(img3, draw_pts2d[draw_pts2d.size()-2], draw_pts2d[draw_pts2d.size()-1],cv::Scalar(255,0,0), lineThickness, cv::LINE_AA);
-        if(draw_pts2d.size() == 4) // Close the polygon if we have 4 points
+        if(draw_pts2d.size() == 4)
             cv::line(img3, draw_pts2d[0], draw_pts2d[draw_pts2d.size()-1],cv::Scalar(255,0,0), lineThickness, cv::LINE_AA);
-        wm_->imshow(draw_title, img3);
+        winName = &draw_title;
+        img3.copyTo(draw_img);
+        // showImage(draw_title, img3);
+        showImage();
+        // wm_->imshow(std::move(draw_title), std::move(img3));
     }
 }
 
 int CoordinatesPicker::getCount() const {return iterCount; }
 
 
-void onMouse(int event, int x, int y, int flags, void* param)
+static void onMouse(int event, int x, int y, int flags, void* param)
 {
     CoordinatesPicker* ptr = reinterpret_cast<CoordinatesPicker*>(param);
     ptr->mouseClick( event, x, y, flags, 0 );
 }
 
-void CoordinatesPicker::get_points(cv::Mat&& img, const std::string& title, vector<cv::Point3d> &pts)
+void CoordinatesPicker::get_points(cv::Mat&& img, std::string&& title, vector<cv::Point3d> &pts)
 {
     draw_title = title;
-    wm_ = boost::shared_ptr<WindowManager>(new WindowManager(title));
-    setMouseCallback(title, &onMouse, this);
-    wm_->imshow(title, draw_img);
-    wm_->destroyAllWindows();
+
+    // wm_ = boost::shared_ptr<WindowManager>(new WindowManager(title));
+    setMouseCallback(title, &onMouse, 0 );
+
+    if(img.type() != 0 && img.type() != 8 && img.type() != 16 && img.type() != 24)
+    {
+        cv::Mat img2;
+        double minVal, maxVal;
+        cv::minMaxIdx(img, &minVal, &maxVal);
+        img.convertTo(img2, CV_8U, 255.0/(maxVal - minVal), -minVal * 255.0/(maxVal - minVal));
+        cv::equalizeHist(img2, draw_img);
+        cv::cvtColor(draw_img, draw_img, CV_GRAY2RGB);
+    }
+    else
+    {
+        // ROS_INFO("in get_points and copying to draw_img");
+        img.copyTo(draw_img);
+        // ROS_INFO("in get_points and finished copying to draw_img");
+    }
+    // wm_->imshow(std::move(title), std::move(draw_img));
+    namedWindow(title, WINDOW_NORMAL);
+    cv::imshow(title, img);
+
+    int key = waitKey(1);
+
+    switch(key & 0xFF )
+    {
+      case 'q':
+        destroyAllWindows();
+        cv::waitKey(100);
+        break;
+      default:
+        break;
+    }
+
+    // std::cout << "draw_img size: " << draw_img.size() << std::endl;
+    winName = &title;
+    // showImage();
     pts = draw_pts3d;
     draw_pts3d.clear();
     draw_pts2d.clear();
 }
 
-std::vector<cv::Point3d> CoordinatesPicker::get_face_region(cv::Mat && faceImg, const std::string & title)
+std::vector<cv::Point3d> CoordinatesPicker::get_face_region(cv::Mat && faceImg, std::string && title)
 {
     std::vector<cv::Point3d> pts;
-    get_points(std::move(faceImg), title, pts);
+    get_points(std::move(faceImg), std::move(title), pts);
 
     return pts;
 }
@@ -203,14 +243,52 @@ int main(int argc, char** argv)
     // il->get_files();
     std::vector<std::string> files_vector = il->filename_full;
 
-    for(auto it=files_vector.cbegin(); it != files_vector.cend(); ++it)
+    std::string what_to_do;
+    cv::Mat faceImg; //container for storing faces
+
+    //load all files one by one
+    // for(auto it=files_vector.cbegin(); it != files_vector.cend(); ++it)
+    boost::shared_ptr<WindowManager> wm_ = boost::shared_ptr<WindowManager>(new WindowManager());
+    auto it = files_vector.cbegin();
+    while( it != files_vector.cend() && ros::ok() )
     {
-        cv::Mat faceImg = imread(*it, IMREAD_ANYDEPTH );
-        cl -> get_face_region(std::move(faceImg), *it);
+        ROS_INFO("Please draw the bounding boxes for face, and eyes in the shown image");
+        ROS_INFO("Type {n} or {next} on the cmdline to advance to the next image");
+
+        cl->draw_img = imread(*it, IMREAD_ANYDEPTH );
+
+        // for(auto i = 0; i < cl->draw_img.rows; ++i)
+        // {
+        //   for(auto j = 0; j < cl->draw_img.cols; ++j)
+        //     OUT("pixel at img [" << i << ", " << j << "]" << cl->draw_img.at(i, j) );
+        // }
+
+        std::string file_name = *it;
+        // std::cout << "faceImg Size: " << cl->draw_img.size() << "\t" << file_name << std::endl;
+
+        cl -> get_face_region(std::move(cl->draw_img), std::move(file_name));
+
+        std::getline(std::cin, what_to_do);
+        if( !what_to_do.compare("n") || !what_to_do.compare("next" ) )
+        {
+            wm_->clearWindow(std::move(file_name), std::move(cl->draw_img));
+            ++it;
+        }
+        else if( !what_to_do.compare("q") || !what_to_do.compare("quit") )
+        {
+            ROS_INFO("Ground Truthing of bounding boxes finished");
+            goto exit_main;
+            break;
+        }
+        else
+        {
+            ROS_INFO("Wrong item entered");
+        }
     }
 
-
-    ros::spin();
-
+    // ros::spin();
+  exit_main:
+    destroyAllWindows();
+    ros::shutdown();
     return EXIT_SUCCESS;
 }

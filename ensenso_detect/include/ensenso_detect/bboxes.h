@@ -36,22 +36,23 @@ public:
 
 	static const int radius = 2;
 	static const int thickness = -1;
+  cv::Mat draw_img;
+  boost::shared_ptr<WindowManager> wm_;
 
 	void reset();
 	void setImageAndWinName( Mat&& _image, string && _winName );
 	void showImage() const;
 	// void onMouse(int event, int x, int y, int flags, void* param);
-	// void onMouse(int event, int x, int y, int flags, void* param);
 	void mouseClick(int event, int x, int y, int flags, void* );
 	void nextIter();
 	int getCount() const;
-	void get_points(cv::Mat&& img, const std::string& title, vector<cv::Point3d> &pts);
-	std::vector<cv::Point3d> get_face_region(cv::Mat && faceImg, const std::string & title);
+	void get_points(cv::Mat&& img, std::string&& title, vector<cv::Point3d> &pts);
+	std::vector<cv::Point3d> get_face_region(cv::Mat && faceImg, std::string && title);
 
 
 private:
 	const string* winName;
-	const Mat* image;
+	mutable const Mat* image;
 	Mat mask;
 	Mat leftEyeModel, rightEyeModel, faceModel;
 
@@ -65,13 +66,9 @@ private:
 	Scalar RED, BLUE, GREEN;
 	int FACE_KEY, LEFT_KEY, RIGHT_KEY;
 
-	//inherited from Anson's api
-
     double draw_height;
     bool save_img;
-    cv::Mat draw_img;
     vector<Point2i> draw_pts2d;
     std::string draw_title;
     vector<cv::Point3d> draw_pts3d;
-    boost::shared_ptr<WindowManager> wm_;
 };
