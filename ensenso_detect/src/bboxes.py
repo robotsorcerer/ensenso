@@ -1,3 +1,16 @@
+"""
+
+Author: Olalekan Ogunmolu
+
+This code loads all images in the specified path given
+and attempts to ease the process of image labeling
+for computer vision classifier builds
+
+Date: May 08, 2017
+
+"""
+
+
 # import the necessary packages
 from __future__ import print_function
 import os, cv2, argparse
@@ -20,11 +33,14 @@ cropping = False
 mode = None # 'l' for left eye, 'r' for right_eye, 'm' for face
 rect = None # opencv rectangle that contains the face or eyes roi
 detect = {}
-detect_items = ['faces', 'left_eyes', 'right_eyes']
-detect_mode = []
 
-for i in range (len(detect_items)):
-    detect[detect_items[i]] = []
+detect_items = ['faces', 'left_eyes', 'right_eyes', 'fore_head', 'nose']
+
+detect_mode = detect_items[1]
+detect[detect_mode] = []
+#
+# for i in range (len(detect_items)):
+#     detect[detect_items[i]] = []
 
 file_name, file_image = None, None
 
@@ -91,29 +107,47 @@ def main():
     images_path = cwd + "/" + "../" + "manikin/raw/face_images"
 
     file_names, images_list = loadAllImages(images_path)
-    global file_name, file_image, rect
+    global file_name, file_image, rect, detect_mode
 
     for i in range(len(images_list)):
         file_name, file_image = file_names[i], images_list[i]
 
-        file_names[i] = images_path + '/' + file_names[i]
+        winName = images_path + '/' + file_names[i]
 
-        mode = raw_input("please enter mode of clicks <f, l, or r> ...")
-        if mode == "f":
-            detect_mode = "faces"
-        elif mode =="l":
-            detect_mode = "left_eye"
-        elif mode == "r":
-            detect_mode = "right_eye"
+        #we always start with faces, then do all the eyes
+        #
+        # mode = raw_input("please enter mode of clicks <f, l, or r> ...")
+        # if mode == "f":
+        #     detect_mode = "faces"
+        # elif mode =="l":
+        #     detect_mode = "left_eye"
+        # elif mode == "r":
+        #     detect_mode = "right_eye"
 
         clone = images_list[i].copy()
-        cv2.namedWindow(file_names[i])
-        cv2.setMouseCallback(file_names[i], click_and_crop)
+        cv2.namedWindow(file_name)
+        cv2.setMouseCallback(file_name, click_and_crop)
+
+        def save(file_name):
+            x1, y1, x4, y4 = refPt[0][0], refPt[0][1], refPt[1][0], refPt[1][1],
+            x2, y2, x3, y3 = x4, y1, x1, y4
+            top_left, top_right = [x1, y1], [x2, y2]
+            bot_left, bot_right = [x3, y3], [x4, y4]
+            #
+            detect[detect_mode].append({
+                file_name: (top_left + top_right, bot_left + bot_right)
+                })
+
+            # dump detect bounding boxes to a json file
+            with open('data/' + detect_mode + '_bboxes.txt', 'w') as outfile:
+                json.dump(detect, outfile)
+
+            #show what you got
+            print(detect)
 
         while True:
             # display the image and wait for a keypress
-            # cv2.resize(images_list[i], images_list[i], 0.5, 0.5)
-            cv2.imshow(file_names[i], images_list[i])
+            cv2.imshow(file_name, images_list[i])
             key = cv2.waitKey(1) & 0xFF
 
             # if the 'r' key is pressed, reset the cropping region
@@ -123,29 +157,13 @@ def main():
 
             # if the 'n' key is pressed, break from the loop
             elif key == ord("n"):
-                cv2.destroyWindow(file_names[i])
+                save(file_name)
+                cv2.destroyWindow(file_name)
                 break
 
-        x1, y1, x4, y4 = refPt[0][0], refPt[0][1], refPt[1][0], refPt[1][1],
-        x2, y2, x3, y3 = x4, y1, x1, y4
-        top_left, top_right = [x1, y1], [x2, y2]
-        bot_left, bot_right = [x3, y3], [x4, y4]
-        #
-        detect[detect_mode].append({
-            file_name: (top_left + top_right, bot_left + bot_right)
-            })
-
-        print(detect)
-
-        # print(x, y, w, h)
-
-    # if there are two reference points, then crop the region of interest
-    # from the image and display it
-    if len(refPt) == 2:
-        roi = clone[refPt[0][1]:refPt[1][1], refPt[0][0]:refPt[1][0]]
-        cv2.imshow("ROI", roi)
-        cv2.waitKey(0)
-
+            if key == ord("s"):
+                save()
+            
     # close all open windows
     cv2.destroyAllWindows()
 
