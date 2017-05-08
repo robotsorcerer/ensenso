@@ -36,7 +36,7 @@ detect = {}
 
 detect_items = ['faces', 'left_eyes', 'right_eyes', 'fore_head', 'nose']
 
-detect_mode = detect_items[1]
+detect_mode = detect_items[2]
 detect[detect_mode] = []
 #
 # for i in range (len(detect_items)):
@@ -129,7 +129,7 @@ def main():
         cv2.setMouseCallback(file_name, click_and_crop)
 
         def save(file_name):
-            x1, y1, x4, y4 = refPt[0][0], refPt[0][1], refPt[1][0], refPt[1][1],
+            x1, y1, x4, y4 = refPt[0][0], refPt[0][1], refPt[1][0], refPt[1][1]
             x2, y2, x3, y3 = x4, y1, x1, y4
             top_left, top_right = [x1, y1], [x2, y2]
             bot_left, bot_right = [x3, y3], [x4, y4]
@@ -163,7 +163,7 @@ def main():
 
             if key == ord("s"):
                 save()
-            
+
     # close all open windows
     cv2.destroyAllWindows()
 
