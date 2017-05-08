@@ -5,6 +5,7 @@ from os import listdir
 from PIL import Image
 import numpy as np
 import sys
+import json
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -16,6 +17,16 @@ args = vars(ap.parse_args())
 # whether cropping is being performed or not
 refPt = []
 cropping = False
+mode = None # 'l' for left eye, 'r' for right_eye, 'm' for face
+rect = None # opencv rectangle that contains the face or eyes roi
+detect = {}
+detect_items = ['faces', 'left_eyes', 'right_eyes']
+detect_mode = []
+
+for i in range (len(detect_items)):
+    detect[detect_items[i]] = []
+
+file_name, file_image = None, None
 
 def exchange(A, idx1, idx2):
     A[idx1], A[idx2] = A[idx2], A[idx1]
@@ -44,8 +55,6 @@ def loadAllImages(images_path):
     for file_name in imagesList:
         image_file_names.append(file_name)
         image = cv2.imread(images_path + '/' + file_name, 1)
-        # image = Image.open(images_path + '/' + file_name)
-        # cv_image = cv2.cvtColor(np.array(image),  cv2.COLOR_RGB2BGR)
         images_list.append(image)
 
     #sort the filenames numerically
@@ -57,6 +66,8 @@ def loadAllImages(images_path):
 def click_and_crop(event, x, y, flags, param):
     # grab references to the global variables
     global refPt, cropping
+    global file_name, file_image
+    global detect, mode, rect
 
     # if the left mouse button was clicked, record the starting
     # (x, y) coordinates and indicate that cropping is being
@@ -72,51 +83,61 @@ def click_and_crop(event, x, y, flags, param):
         refPt.append((x, y))
         cropping = False
 
-        print(file_name)
         # draw a rectangle around the region of interest
-        cv2.rectangle(file_image, refPt[0], refPt[1], (0, 255, 0), 2)
-        cv2.imshow(file_name, file_image)
+        rect = cv2.rectangle(file_image, refPt[0], refPt[1], (0, 255, 0), 2)
 
-file_name, file_image = None, None
-
-def main(i):
-    images_path = "/home/lex/catkin_ws/src/sensors/ensenso_detect/manikin/raw/face_images"
+def main():
+    cwd = os.getcwd()
+    images_path = cwd + "/" + "../" + "manikin/raw/face_images"
 
     file_names, images_list = loadAllImages(images_path)
-    if args['verbose']:
-        # print(len(images_list))
-        # for i in file_names:
-            # print(i)
-        file_names[1] = images_path + '/' + file_names[1]
-        # print('file_names[1]', file_names[1])
-        # print(images_list[1], 'images_list[1]')
-        # cv2.namedWindow(file_names[1])
-        # cv2.imshow(file_names[1], images_list[1])
+    global file_name, file_image, rect
 
-    key = cv2.waitKey(1) & 0xFF
+    for i in range(len(images_list)):
+        file_name, file_image = file_names[i], images_list[i]
 
-    # for i in range(len(images_list)):
-    # while True:
-    file_name, file_image = file_names[i], images_list[i]
+        file_names[i] = images_path + '/' + file_names[i]
 
-    file_names[i] = images_path + '/' + file_names[i]
+        mode = raw_input("please enter mode of clicks <f, l, or r> ...")
+        if mode == "f":
+            detect_mode = "faces"
+        elif mode =="l":
+            detect_mode = "left_eye"
+        elif mode == "r":
+            detect_mode = "right_eye"
 
-    clone = images_list[i].copy()
-    cv2.namedWindow(file_names[i])
-    cv2.setMouseCallback(file_names[i], click_and_crop)
+        clone = images_list[i].copy()
+        cv2.namedWindow(file_names[i])
+        cv2.setMouseCallback(file_names[i], click_and_crop)
 
-    # display the image and wait for a keypress
-    cv2.imshow(file_names[i], images_list[i])
+        while True:
+            # display the image and wait for a keypress
+            # cv2.resize(images_list[i], images_list[i], 0.5, 0.5)
+            cv2.imshow(file_names[i], images_list[i])
+            key = cv2.waitKey(1) & 0xFF
 
-    # if the 'r' key is pressed, reset the cropping region
-    if key == ord("r"):
-        images_list[i] = clone.copy()
+            # if the 'r' key is pressed, reset the cropping region
+            if key == ord("r"):
+                images_list[i] = clone.copy()
+                file_name, file_image = file_names[i], images_list[i]
 
-    if(key == ord("n")):
-        cv2.destroyWindow(file_names[i])
-        i = i +1
+            # if the 'n' key is pressed, break from the loop
+            elif key == ord("n"):
+                cv2.destroyWindow(file_names[i])
+                break
 
+        x1, y1, x4, y4 = refPt[0][0], refPt[0][1], refPt[1][0], refPt[1][1],
+        x2, y2, x3, y3 = x4, y1, x1, y4
+        top_left, top_right = [x1, y1], [x2, y2]
+        bot_left, bot_right = [x3, y3], [x4, y4]
+        #
+        detect[detect_mode].append({
+            file_name: (top_left + top_right, bot_left + bot_right)
+            })
 
+        print(detect)
+
+        # print(x, y, w, h)
 
     # if there are two reference points, then crop the region of interest
     # from the image and display it
@@ -129,8 +150,4 @@ def main(i):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    i = 0
-    while True:
-        main(i)
-        raw_input("press any key ...")
-        i = i +1
+    main()
