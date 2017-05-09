@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -35,7 +35,6 @@ class ResidualBlock(nn.Module):
         out += residual
         out = self.relu(out)
         return out
-
 
 # ResNet Module
 class ResNet(nn.Module):
@@ -75,3 +74,109 @@ class ResNet(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
+class LSTMModel(nn.Module):
+    '''
+    nn.LSTM Parameters:
+        input_size  – The number of expected features in the input x
+        hidden_size – The number of features in the hidden state h
+        num_layers  – Number of recurrent layers.
+    Inputs: input, (h_0, c_0)
+        input (seq_len, batch, input_size)
+        h_0 (num_layers * num_directions, batch, hidden_size)
+        c_0 (num_layers * num_directions, batch, hidden_size)
+    Outputs: output, (h_n, c_n)
+        output (seq_len, batch, hidden_size * num_directions)
+        h_n (num_layers * num_directions, batch, hidden_size)
+        c_n (num_layers * num_directions, batch, hidden_size)
+    '''
+    def __init__(self, inputSize=64, nHidden=32, batchSize=1):
+        super(LSTMModel, self).__init__()
+
+        self.input_size  = inputSize
+        self.hidden_size = nHidden
+        self.batch_size  = batchSize
+
+class StackRegressive(nn.Module)
+    def __init__(self, inputSize=64, nHidden=[64,32,16], noutputs=12, batchSize=1, \
+                 numLayers=2):
+        super.__init__(StackRegressive, self):
+        """
+        Following the interpretable learning from self-driving examples:
+        https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
+        feature cube x_t from the resnet model as a set of L = W x H
+        vectors of depth D.
+
+        Since these share the same feature extraction layers, only the
+        final regression layers need to be recomputed after computing the
+        classification network
+
+        We then stack an LSTM module on this layer to obtain the detection
+        predictions
+
+        The number of outputs is thus given:
+        First 4 cols represent top and lower coordinates of face boxes,
+        Followed by 2 cols belonging to left eye pixel coords,
+        last 2 cols are the right eye coords
+        """
+        def build_regressor(self, model='resnet_acc=97_iter=1000.pkl'):
+            #obtain model
+            res_classifier = ResNet(ResidualBlock, [3, 3, 3])
+    		res_classifier.load_state_dict(torch.load('models225/' + model))
+
+            # Get everything but the last last_layer
+            res_feature_cube = nn.Sequential(*list(res_classifier.children())[:-1])
+
+            return res_feature_cube
+        self.res_classifier = build_regressor
+
+        # Backprop Through Time (Recurrent Layer) Params
+        self.cost = nn.MSELoss(size_average=False)
+        self.noutputs = noutputs
+        self.num_layers = numLayers
+        self.input_size  = inputSize
+        self.hidden_size = nHidden
+        self.batch_size  = batchSize
+        self.noutputs = noutputs
+        self.criterion = nn.MSELoss(size_average=False)
+
+        """
+        Now stack an LSTM on top of the convnet to generate bounding box predictions
+        Since last conv layer in classifier is a 64-layer, we initiate our LSTM with
+        a 64-neuron input layer
+        """
+
+        #define the recurrent connections
+        self.lstm1 = nn.LSTM(inputSize, nHidden[0], numLayers)
+        self.lstm2 = nn.LSTM(nHidden[0], nHidden[1], numLayers)
+        self.lstm3 = nn.LSTM(nHidden[1], nHidden[2], noutputs)
+        self.fc    = nn.Linear(nHidden[2], noutputs)
+        self.drop  = nn.Dropout(0.3)
+
+    def forward(self, x):
+        nBatch = x.size(0)
+
+        out = self.build_regressor(x)
+        #set initial states
+        h0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]).cuda())
+        c0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]).cuda())
+        # Forward propagate RNN layer 1
+        out, _ = self.lstm1(x, (h0, c0))
+        out = self.drop(out)
+
+        # Set hidden layer 2 states
+        h1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]).cuda())
+        c1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]).cuda())
+        # Forward propagate RNN layer 2
+        out, _ = self.lstm2(out, (h1, c1))
+
+        # Set hidden layer 3 states
+        h2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]).cuda())
+        c2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]).cuda())
+        # Forward propagate RNN layer 2
+        out, _ = self.lstm3(out, (h2, c2))
+        out = self.drop(out)
+
+        # Decode hidden state of last time step
+        out = self.fc(out[:, -1, :])
+
+        out = out.view(nBatch, -1)

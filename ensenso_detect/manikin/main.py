@@ -211,20 +211,21 @@ class loadAndParse(object):
         labelsAll[:,0:1] = labels_t
         labelsAll[:,1:] = boxes_t
 
-        labelsAll = labelsAll
+        labelsAll = labelsAll#.double()
+
+        print(labelsAll.size())
 
         #Now copy tensors over
         train_X = torch.stack(self.real_images[:X_tr], 0)
-        train_Y = labelsAll[:X_tr,:].double()
+        train_Y = labelsAll[:X_tr,:]#
         #testing set
         test_X = torch.stack(self.real_images[X_tr:], 0)
-        test_Y = labelsAll[X_tr:].double()
+        test_Y = labelsAll[X_tr:]#.double()
 
         #data loaders
         train_dataset =  data.TensorDataset(train_X, train_Y)
         train_loader = data.DataLoader(train_dataset,
                         batch_size=self.args.batchSize, shuffle=True)
-
 
         test_dataset = data.TensorDataset(test_X, test_Y)
         test_loader = data.DataLoader(test_dataset,
@@ -246,19 +247,19 @@ class loadAndParse(object):
 def main():
     #obtain training and testing data
     lnp = loadAndParse(args)
-
-    dict_combo = bbox()
-    faces_dict, left_dict, right_dict = dict_combo[0], dict_combo[1],  dict_combo[2]
-
-    if args.verbose:
-        print(faces_dict)
-        # print(left_dict)
-        # print(right_dict)
-
     train_loader, test_loader = lnp.partitionData()
 
     #obtain model
     resnet = ResNet(ResidualBlock, [3, 3, 3])
+    """
+    Following the interpretable learning from self-driving examples:
+    https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
+    feature cube x_t from the resnet model as a set of L = W x H
+    vectors of depth D
+    """
+    # Get everything but the last last_layer
+    minus_last_layer = nn.Sequential(*list(model.children())[:-1])
+	# model.classifier = last_layer
 
     # Loss and Optimizer
     criterion = nn.CrossEntropyLoss()
