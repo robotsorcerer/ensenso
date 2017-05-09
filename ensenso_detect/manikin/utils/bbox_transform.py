@@ -1,92 +1,64 @@
-# --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
-# --------------------------------------------------------
+import json, os, yaml
 
-import numpy as np
-from sympy.physics.paulialgebra import delta
+def get_bounding_boxes():
+    faces_dict = dict()
+    lefte_dict = dict()
+    righte_dict = dict()
 
+    pwd = os.getcwd()
+    data_dir = pwd + '/' + '../src/data/'
+    with open(data_dir + 'faces_bboxes.txt') as faces_file:
+    #     faces = json.load(faces_file)
+        faces = yaml.safe_load(faces_file)
+        for f in faces['faces']:
+            for k, v in f.items():
+                faces_dict[k] = v
 
-def bbox_transform(ex_rois, gt_rois):
-    """
-    computes the distance from ground-truth boxes to the given boxes, normed by their size
-    :param ex_rois: n * 4 numpy array, given boxes
-    :param gt_rois: n * 4 numpy array, ground-truth boxes
-    :return: deltas: n * 4 numpy array, ground-truth boxes
-    """
-    ex_widths = ex_rois[:, 2] - ex_rois[:, 0] + 1.0
-    ex_heights = ex_rois[:, 3] - ex_rois[:, 1] + 1.0
-    ex_ctr_x = ex_rois[:, 0] + 0.5 * ex_widths
-    ex_ctr_y = ex_rois[:, 1] + 0.5 * ex_heights
-
-    # assert np.min(ex_widths) > 0.1 and np.min(ex_heights) > 0.1, \
-    #     'Invalid boxes found: {} {}'. \
-    #         format(ex_rois[np.argmin(ex_widths), :], ex_rois[np.argmin(ex_heights), :])
-
-    gt_widths = gt_rois[:, 2] - gt_rois[:, 0] + 1.0
-    gt_heights = gt_rois[:, 3] - gt_rois[:, 1] + 1.0
-    gt_ctr_x = gt_rois[:, 0] + 0.5 * gt_widths
-    gt_ctr_y = gt_rois[:, 1] + 0.5 * gt_heights
-
-    targets_dx = (gt_ctr_x - ex_ctr_x) / ex_widths
-    targets_dy = (gt_ctr_y - ex_ctr_y) / ex_heights
-    targets_dw = np.log(gt_widths / ex_widths)
-    targets_dh = np.log(gt_heights / ex_heights)
-
-    targets = np.vstack(
-        (targets_dx, targets_dy, targets_dw, targets_dh)).transpose()
-    return targets
+    #load eye bounding boxes
+    with open(data_dir + 'left_eyes_bboxes.txt') as lefte_file:
+    #     faces = json.load(faces_file)
+        left_eye = yaml.safe_load(lefte_file)
+        for f in left_eye['left_eyes']:
+            for k, v in f.items():
+                lefte_dict[k] = v
 
 
-def bbox_transform_inv(boxes, deltas):
-    if boxes.shape[0] == 0:
-        return np.zeros((0,), dtype=deltas.dtype)
+    #load right eye bounding boxes
+    with open(data_dir + 'right_eyes_bboxes.txt') as righte_file:
+    #     faces = json.load(faces_file)
+        right_eye = yaml.safe_load(righte_file)
+        for f in right_eye['right_eyes']:
+            for k, v in f.items():
+                righte_dict[k] = v
 
-    boxes = boxes.astype(deltas.dtype, copy=False)
-
-    widths = boxes[:, 2] - boxes[:, 0] + 1.0
-    heights = boxes[:, 3] - boxes[:, 1] + 1.0
-    ctr_x = boxes[:, 0] + 0.5 * widths
-    ctr_y = boxes[:, 1] + 0.5 * heights
-
-    dx = deltas[:, 0::4]
-    dy = deltas[:, 1::4]
-    dw = deltas[:, 2::4]
-    dh = deltas[:, 3::4]
-
-    pred_ctr_x = dx * widths[:, np.newaxis] + ctr_x[:, np.newaxis]
-    pred_ctr_y = dy * heights[:, np.newaxis] + ctr_y[:, np.newaxis]
-    pred_w = np.exp(dw) * widths[:, np.newaxis]
-    pred_h = np.exp(dh) * heights[:, np.newaxis]
-
-    pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
-    # x1
-    pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w
-    # y1
-    pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h
-    # x2
-    pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w
-    # y2
-    pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h
-
-    return pred_boxes
+    faceAndEyesDict = [faces_dict,  lefte_dict,  righte_dict]
+    return faceAndEyesDict
 
 
-def clip_boxes(boxes, im_shape):
-    """
-    Clip boxes to image boundaries.
-    """
-    if boxes.shape[0] == 0:
-        return boxes
+"""
+    adapted from
+    http://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
+"""
 
-    # x1 >= 0
-    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
-    # y1 >= 0
-    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
-    # x2 < im_shape[1]
-    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
-    # y2 < im_shape[0]
-    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
-    return boxes
+def get_iou(boxA, boxB):
+	# determine the (x, y)-coordinates of the intersection rectangle
+	xA = max(boxA[0], boxB[0])
+	yA = max(boxA[1], boxB[1])
+	xB = min(boxA[2], boxB[2])
+	yB = min(boxA[3], boxB[3])
+
+	# compute the area of intersection rectangle
+	interArea = (xB - xA + 1) * (yB - yA + 1)
+
+	# compute the area of both the prediction and ground-truth
+	# rectangles
+	boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+	boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+
+	# compute the intersection over union by taking the intersection
+	# area and dividing it by the sum of prediction + ground-truth
+	# areas - the interesection area
+	iou = interArea / float(boxAArea + boxBArea - interArea)
+
+	# return the intersection over union value
+	return iou

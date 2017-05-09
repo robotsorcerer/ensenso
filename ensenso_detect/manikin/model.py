@@ -39,7 +39,7 @@ class ResidualBlock(nn.Module):
 
 # ResNet Module
 class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=2):
+    def __init__(self, block, layers, num_classes=1):
         super(ResNet, self).__init__()
         self.in_channels = 16
         self.conv = conv3x3(3, 16)
