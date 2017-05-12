@@ -38,7 +38,7 @@ from model import ResNet, ResidualBlock, StackRegressive
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--cuda', action='store_true', default=True, help="use cuda or not?")
+parser.add_argument('--cuda', action='store_true', help="use cuda or not?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=200, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -196,10 +196,8 @@ class LoadAndParse(object):
         train_Y = torch.from_numpy(np.array(self.real_labels[:X_tr]))
 
         # bounding box data
-        bbox_X = torch.from_numpy(self.face_left_right[:X_tr])
-        bbox_Y = torch.from_numpy(self.face_left_right[X_tr:])
-
-        print('bbox_X and bbox_Y sizes: {} | {}'.format(bbox_X.size(), bbox_Y.size()))
+        bbox_X = torch.from_numpy(self.face_left_right[:X_tr]).double()
+        bbox_Y = torch.from_numpy(self.face_left_right[X_tr:]).double()
 
         #testing set
         test_X = torch.stack(self.real_images[X_tr:], 0)
@@ -216,9 +214,7 @@ class LoadAndParse(object):
                             batch_size=self.args.cbatchSize, shuffle=True)
 
         #bbox loader
-        bbox_dataset = data.TensorDataset(bbox_X, bbox_Y)
-        bbox_loader = data.DataLoader(bbox_dataset,
-                            batch_size=self.args.cbatchSize, shuffle=True)
+        bbox_loader = { 'bbox_X': bbox_X, 'bbox_Y': bbox_Y }
 
         #check size of slices
         if self.args.verbose:
@@ -303,41 +299,81 @@ def trainRegressor(args, bbox_loader):
     numLayers = 2
     lr=args.rnnLR
     maxIter = args.cmaxIter
+
+    '''
+    #extract feture cube of last layer and reshape it
+    res_classifier = ResNet(ResidualBlock, [3, 3, 3])
+
+    if args.classifier is not None:    #use pre-trained classifier
+          res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
+
+    # Get everything but the classifier fc (last) layer
+    res_cube = list(res_classifier.children()).pop()
+    #reshape last layer for input of bounding box coords
+    res_cube.append(nn.Linear(inputSize), inputSize)
+    '''
+
+    bbox_X = bbox_loader['bbox_X']
+    bbox_Y = bbox_loader['bbox_Y']
+
+    if(args.cuda):
+        bbox_X = bbox_X.cuda()
+        bbox_Y = bbox_Y.cuda()
+        regressor = regressor#.cuda()
+
+    #extract feture cube of last layer and reshape it
+    res_classifier = ResNet(ResidualBlock, [3, 3, 3])
+
+    if args.classifier is not None:    #use pre-trained classifier
+          res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
+          res_classifier = nn.Sequential(*list(res_classifier.children()))
+
+          #freeze optimized layers
+          for param in res_classifier.parameters():
+              param.requires_grad = False
+
+    #   res_cube = list(res_classifier.children())[:-1]
+    params_list = []
+    #accumalate all the features of the fc layer into a list
+    for p in res_classifier.fc.parameters():
+        params_list.append(p)  #will contain weighs and biases
+
+    params_weight, params_bias = params_list[0], params_list[1]
+
+    #reshape params_weight
+    params_weight = params_weight.view(128, -1)
+    #xavier initialize recurrent layer
+
     # Get regressor model and predict bounding boxes
-    regressor = StackRegressive(model=None, inputSize=64, nHidden=[12,24,12], noutputs=12,\
+    regressor = StackRegressive(res_cube=res_classifier, inputSize=128, nHidden=[64,32,12], noutputs=12,\
                           batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
-
-    t = '{}'.format('parsed regressor model')
-
     #define optimizer
     optimizer = optim.SGD(regressor.parameters(), lr)
 
     # Forward + Backward + Optimize
     for epoch in xrange(maxIter): #run through the images maxIter times
-        for i, (bbox_X, bbox_Y) in enumerate(bbox_loader):
+        # bbox_Y = Variable(bbox_Y[i, i+batchSize,])
 
-            if(args.cuda):
-                bbox_X = bbox_X.cuda()
-                bbox_Y = bbox_Y.cuda()
-                regressor = regressor.cuda()
+        for i in xrange(len(bbox_X)):
+            print(res_cube)
+            #reshape last layer for input of bounding box coords
+            # res_cube.append(nn.Linear(inputSize, inputSize))
 
             # images = Variable(train_X[i:i+batchSize,:,:,:])
             # labels = Variable(train_Y[i:i+batchSize,])
-            bbox_X = Variable(bbox_X)
-            bbox_Y = Variable(bbox_Y)
+            # print(bbox_X[i:i+batchSize])
+            outputs = regressor(res_cube)
+            targets = Variable(params_weight)
 
-            outputs = regressor(bbox_X)
-
-            loss    = regressor.criterion(outputs, labels)
+            loss    = regressor.criterion(outputs, targets)
             loss.backward()
             optimizer.step()
 
             # if (epoch % 10) == 0:
             print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.4f}'.format(
-                epoch, epoch+batchSize, trainX.size(0),
-                float(iter+batchSize)/trainX.size(0)*100,
+                epoch, epoch+batchSize, bbox_X.data.size(0),
+                float(i+batchSize)/bbox_X.data.size(0)*100,
                 loss.data[0]))
-
 
 def main(args):
     #obtain training and testing data

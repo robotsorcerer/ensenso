@@ -72,6 +72,7 @@ class ResNet(nn.Module):
         out = self.layer3(out)
         out = self.avg_pool(out)
         out = out.view(out.size(0), -1)
+        # print(out.size())
         out = self.fc(out)
         return out
 
@@ -107,6 +108,7 @@ class StackRegressive(nn.Module):
         self.batch_size     = kwargs['batchSize']
         self.noutputs       = kwargs['noutputs']
         self.cuda           = kwargs['cuda']
+        self.res_cube       = kwargs['res_classifier']
 
         for key in kwargs:
             # print("(%s: %s)" % (key, kwargs[key]))
@@ -118,18 +120,16 @@ class StackRegressive(nn.Module):
 
         #obtain model
         def build_regressor(self):
+            #extract feture cube of last layer and reshape it
             res_classifier = ResNet(ResidualBlock, [3, 3, 3])
 
-            if self.model is not None:    #use pre-trained classifier
-    		      res_classifier.load_state_dict(torch.load('models225/' + self.model))
+            if args.classifier is not None:    #use pre-trained classifier
+        	      res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
 
             # Get everything but the classifier fc (last) layer
-            res_feat_cube = nn.Sequential(*list(res_classifier.children())[:-1])
-
+            res_cube = list(res_classifier.children()).pop()
             #reshape last layer for input of bounding box coords
-            resnet_feat_cube = resnet_feat_cube.view(res_feat_cube.size(0), -1)
-            resnet_feat_cube = self.fc(resnet_feat_cube)
-
+            res_cube.append(nn.Linear(inputSize), inputSize)
             return res_feature_cube
         self.res_classifier = build_regressor
 
@@ -149,7 +149,8 @@ class StackRegressive(nn.Module):
     def forward(self, x):
         nBatch = x.size(0)
 
-        out = self.build_regressor(x)
+        # out = self.res_classifier(x)
+
         #set initial states
         h0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
         c0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
