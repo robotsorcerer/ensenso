@@ -1,50 +1,58 @@
 #!/usr/bin/env python
+from __future__ import print_function
+__author__ = 'Olalekan Ogunmolu'
 
+#py utils
+import os
+import json
 import argparse
+from PIL import Image
+from os import listdir
+
+#GPU utils
+# try: import setGPU
+# except ImportError: pass
+
+#torch utils
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
-import torchvision.transforms as transforms
 import torch.utils.data as data
-import numpy as np
+import torchvision.models as models
 from torch.autograd import Variable
-from PIL import Image
-from os import listdir
-import json
-import time
-import numpy as np
-import os
-# import setGPU
+import torchvision.transforms as transforms
 
-from collections import namedtuple
-import numpy as np
+#cv2/numpy utils
 import cv2
-
+import numpy as np
+import numpy.random as npr
 from random import shuffle
-
-from model import ResNet, ResidualBlock
-from utils import get_bounding_boxes as bbox
 
 import sys
 # from IPython.core import ultratb
 # sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 #      color_scheme='Linux', call_pdb=1)
 
+#myne utils
+from model import ResNet, ResidualBlock, StackRegressive
+from utils import get_bounding_boxes as bbox
+
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--cuda', type=bool, default=True)
-parser.add_argument('--disp', type=bool, default=False)
-parser.add_argument('--maxIter', type=int, default=200)
+parser.add_argument('--cuda', action='store_true', default=True, help="use cuda or not?")
+parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
+parser.add_argument('--cmaxIter', type=int, default=200, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
-parser.add_argument('--batchSize', type=int, default=20)
-parser.add_argument('--lr', type=float, default=1e-3)
-parser.add_argument('--epoch', type=int, default=500)
+parser.add_argument('--cbatchSize', type=int, default=1, help="classifier batch size")
+parser.add_argument('--clr', type=float, default=1e-3, help="classifier learning rate")
+parser.add_argument('--rnnLR', type=float, default=5e-3, help="regressor learning rate")
+parser.add_argument('--classifier', type=str, default='resnet_acc=97_iter=1000.pkl')
+parser.add_argument('--cepoch', type=int, default=500)
 parser.add_argument('--verbose', type=bool, default=False)
 args = parser.parse_args()
-
+print(args)
 torch.set_default_tensor_type('torch.DoubleTensor')
 
-class loadAndParse(object):
+class LoadAndParse(object):
 
     def __init__(self, args, true_path="raw/face_images/", fake_path="raw/face_neg/"):
         '''
@@ -120,7 +128,7 @@ class loadAndParse(object):
 
         return loadedImages, faces_bbox, left_bbox, right_bbox
 
-    def load_negative(self):
+    def loadNegative(self):
         negative_list = []
         for dirs in self.neg_dirs:
             for img_path in listdir(dirs):
@@ -146,8 +154,7 @@ class loadAndParse(object):
             faces_bot.append(self.faces_bbox[i][1])
 
         """
-        First
-        Followed 4 cols represent top coordinates of face boxes,
+        First 4 cols represent top coordinates of face boxes,
         Followed by lower coordinates of face_boxes
         Next 2 cols belong to left eye centers, last col are right eye coords
         """
@@ -158,22 +165,6 @@ class loadAndParse(object):
         # self.fake_labels = [0]*len(fake_images)  #backgrounds
 
         imagesAll = self.true_images #+ fake_images
-
-        """
-        labelsAll = true_labels #+ fake_labels
-
-        #permute images and labels in place
-        temp = list(zip(imagesAll, labelsAll))
-        shuffle(temp)
-        imagesAll, labelsAll = zip(*temp)
-
-        classes = self.loadLabelsFromJson()
-
-        #be sure the images are rightly loaded
-        if self.args.disp:
-            true_images[0].show()
-            fake_images[0].show()
-        """
 
         # Now preprocess and create list for images
         for imgs in imagesAll:
@@ -188,8 +179,6 @@ class loadAndParse(object):
         # retrieve the images first
         self.getImages()
 
-        #by now the self.real_images and fakenreak_labels lists are populated
-#
         #Now separate true and fake to training and testing sets
         portion_train = 0.8
         portion_test = 0.2
@@ -201,74 +190,54 @@ class loadAndParse(object):
                                   self.real_images[0].size(2))
         test_X = torch.LongTensor(X_te, self.real_images[0].size(0), self.real_images[0].size(1),
                                   self.real_images[0].size(2))
-        # Now labels and bboxes
-        labels_t = torch.from_numpy(np.array(self.real_labels))
-        boxes_t = torch.from_numpy(np.array(self.face_left_right))
-
-        #Allocate storage for all labels
-        labelsAll = torch.LongTensor(labels_t.size(0), boxes_t.size(1)+1)
-
-        labelsAll[:,0:1] = labels_t
-        labelsAll[:,1:] = boxes_t
-
-        labelsAll = labelsAll#.double()
-
-        print(labelsAll.size())
 
         #Now copy tensors over
         train_X = torch.stack(self.real_images[:X_tr], 0)
-        train_Y = labelsAll[:X_tr,:]#
+        train_Y = torch.from_numpy(np.array(self.real_labels[:X_tr]))
+
+        # bounding box data
+        bbox_X = torch.from_numpy(self.face_left_right[:X_tr])
+        bbox_Y = torch.from_numpy(self.face_left_right[X_tr:])
+
+        print('bbox_X and bbox_Y sizes: {} | {}'.format(bbox_X.size(), bbox_Y.size()))
+
         #testing set
         test_X = torch.stack(self.real_images[X_tr:], 0)
-        test_Y = labelsAll[X_tr:]#.double()
+        test_Y = torch.from_numpy(np.array(self.real_labels[X_tr:]))
 
         #data loaders
         train_dataset =  data.TensorDataset(train_X, train_Y)
-        train_loader = data.DataLoader(train_dataset,
-                        batch_size=self.args.batchSize, shuffle=True)
+        train_loader  =  data.DataLoader(train_dataset,
+                        batch_size=self.args.cbatchSize, shuffle=True)
 
+        #test loader
         test_dataset = data.TensorDataset(test_X, test_Y)
         test_loader = data.DataLoader(test_dataset,
-                            batch_size=self.args.batchSize, shuffle=True)
+                            batch_size=self.args.cbatchSize, shuffle=True)
+
+        #bbox loader
+        bbox_dataset = data.TensorDataset(bbox_X, bbox_Y)
+        bbox_loader = data.DataLoader(bbox_dataset,
+                            batch_size=self.args.cbatchSize, shuffle=True)
 
         #check size of slices
         if self.args.verbose:
             print('train_X and train_Y sizes: {} | {}'.format(train_X.size(), train_Y.size()))
             print('test_X and test_Y sizes: {} | {}'.format(test_X.size(), test_Y.size()))
 
-        return train_loader, test_loader
+        return train_loader, test_loader, bbox_loader
 
-    def file_exists(file_path):
-        if not file_path:
-            return False
-        else:
-            return True
+def trainClassifier(train_loader, resnet, args):
+    #hyperparameters
+    lr = args.clr
+    batchSize = args.cbatchSize
+    maxIter = args.cmaxIter
 
-def main():
-    #obtain training and testing data
-    lnp = loadAndParse(args)
-    train_loader, test_loader = lnp.partitionData()
+    #determine classification loss and clsfx_optimizer
+    clsfx_crit = nn.CrossEntropyLoss()
+    clsfx_optimizer = torch.optim.Adam(resnet.parameters(), lr)
 
-    #obtain model
-    resnet = ResNet(ResidualBlock, [3, 3, 3])
-    """
-    Following the interpretable learning from self-driving examples:
-    https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
-    feature cube x_t from the resnet model as a set of L = W x H
-    vectors of depth D
-    """
-    # Get everything but the last last_layer
-    minus_last_layer = nn.Sequential(*list(model.children())[:-1])
-	# model.classifier = last_layer
-
-    # Loss and Optimizer
-    criterion = nn.CrossEntropyLoss()
-    lr = args.lr
-    batchSize = args.batchSize
-    maxIter = args.maxIter
-    optimizer = torch.optim.Adam(resnet.parameters(), lr=args.lr)
-
-    # Training
+    # Train classifier
     for epoch in range(maxIter): #run through the images maxIter times
         for i, (train_X, train_Y) in enumerate(train_loader):
 
@@ -283,23 +252,24 @@ def main():
             labels = Variable(train_Y)
 
             # Forward + Backward + Optimize
-            optimizer.zero_grad()
+            clsfx_optimizer.zero_grad()
             outputs = resnet(images)
-            loss = criterion(outputs, labels)
+            loss = clsfx_crit(outputs, labels)
             loss.backward()
-            optimizer.step()
+            clsfx_optimizer.step()
 
             # if(epoch %2 == 0):
-            print ("Epoch [%d/%d], Iter [%d/%d] Loss: %.8f" %(epoch+1, args.maxIter, i+1, int(batchSize), loss.data[0]))
+            # print(enumerate(train_loader)())
+            print ("Epoch [%d/%d], Iter [%d] Loss: %.8f" %(epoch+1, maxIter, i+1, loss.data[0]))
 
             # Decaying Learning Rate
             # if (epoch+1) % 50 == 0:
             #     lr /= 3
-            #     optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
+            #     clsfx_optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
+    return resnet
 
-    # Test
-    correct = 0
-    total = 0
+def testClassifier(test_loader, resnet, args):
+    correct, total = 0, 0
     for test_X, test_Y in test_loader:
         if(args.cuda):
             test_X = test_X.cuda()
@@ -315,8 +285,79 @@ def main():
     print('Accuracy of the model on the test images: %d %%' %(score))
 
     # Save the Model
-    torch.save(resnet.state_dict(), 'resnet_'+ score + '%_epoch_' + args.maxIter)
-    # torch.save(resnet, 'resnet.pth')
+    torch.save(resnet.state_dict(), 'resnet_'+ str(score) + str(args.cmaxIter))
+
+def trainRegressor(args, bbox_loader):
+    r"""
+    Following the interpretable learning from self-driving examples:
+    https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
+    feature cube x_t from the resnet model as a set of L = W x H
+    vectors of depth D, and stack a regressor module to obtain
+    bounding boxes
+    """
+    #hyperparameters
+    inputSize = 64
+    nHidden = [64, 32, 16]
+    noutputs = 12
+    batchSize = args.cbatchSize
+    numLayers = 2
+    lr=args.rnnLR
+    maxIter = args.cmaxIter
+    # Get regressor model and predict bounding boxes
+    regressor = StackRegressive(model=None, inputSize=64, nHidden=[12,24,12], noutputs=12,\
+                          batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
+
+    t = '{}'.format('parsed regressor model')
+
+    #define optimizer
+    optimizer = optim.SGD(regressor.parameters(), lr)
+
+    # Forward + Backward + Optimize
+    for epoch in xrange(maxIter): #run through the images maxIter times
+        for i, (bbox_X, bbox_Y) in enumerate(bbox_loader):
+
+            if(args.cuda):
+                bbox_X = bbox_X.cuda()
+                bbox_Y = bbox_Y.cuda()
+                regressor = regressor.cuda()
+
+            # images = Variable(train_X[i:i+batchSize,:,:,:])
+            # labels = Variable(train_Y[i:i+batchSize,])
+            bbox_X = Variable(bbox_X)
+            bbox_Y = Variable(bbox_Y)
+
+            outputs = regressor(bbox_X)
+
+            loss    = regressor.criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            # if (epoch % 10) == 0:
+            print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.4f}'.format(
+                epoch, epoch+batchSize, trainX.size(0),
+                float(iter+batchSize)/trainX.size(0)*100,
+                loss.data[0]))
+
+
+def main(args):
+    #obtain training and testing data
+    lnp = LoadAndParse(args)
+    train_loader, test_loader, bbox_loader = lnp.partitionData()
+
+    #obtain classification model
+    resnet = ResNet(ResidualBlock, [3, 3, 3])
+
+    # train classifier
+    # net = trainClassifier(train_loader, resnet, args)
+
+    # test classifier and save classifier model
+    # testClassifier(test_loader, resnet, args)
+
+    #train regrerssor
+    # bbox = lnp.face_left_right
+    trainRegressor(args, bbox_loader)
+
+    # Now stack regressive model on top of feature_cube of classifier
 
 if __name__=='__main__':
-    main()
+    main(args)

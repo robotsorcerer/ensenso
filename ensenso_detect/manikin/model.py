@@ -38,7 +38,7 @@ class ResidualBlock(nn.Module):
 
 # ResNet Module
 class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=1):
+    def __init__(self, block, layers, num_classes=2):
         super(ResNet, self).__init__()
         self.in_channels = 16
         self.conv = conv3x3(3, 16)
@@ -74,32 +74,10 @@ class ResNet(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
-class LSTMModel(nn.Module):
-    '''
-    nn.LSTM Parameters:
-        input_size  – The number of expected features in the input x
-        hidden_size – The number of features in the hidden state h
-        num_layers  – Number of recurrent layers.
-    Inputs: input, (h_0, c_0)
-        input (seq_len, batch, input_size)
-        h_0 (num_layers * num_directions, batch, hidden_size)
-        c_0 (num_layers * num_directions, batch, hidden_size)
-    Outputs: output, (h_n, c_n)
-        output (seq_len, batch, hidden_size * num_directions)
-        h_n (num_layers * num_directions, batch, hidden_size)
-        c_n (num_layers * num_directions, batch, hidden_size)
-    '''
-    def __init__(self, inputSize=64, nHidden=32, batchSize=1):
-        super(LSTMModel, self).__init__()
 
-        self.input_size  = inputSize
-        self.hidden_size = nHidden
-        self.batch_size  = batchSize
-
-class StackRegressive(nn.Module)
-    def __init__(self, inputSize=64, nHidden=[64,32,16], noutputs=12, batchSize=1, \
-                 numLayers=2):
-        super.__init__(StackRegressive, self):
+class StackRegressive(nn.Module):
+    def __init__(self, **kwargs):
+        super(StackRegressive, self).__init__()
         """
         Following the interpretable learning from self-driving examples:
         https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
@@ -118,26 +96,42 @@ class StackRegressive(nn.Module)
         Followed by 2 cols belonging to left eye pixel coords,
         last 2 cols are the right eye coords
         """
-        def build_regressor(self, model='resnet_acc=97_iter=1000.pkl'):
-            #obtain model
-            res_classifier = ResNet(ResidualBlock, [3, 3, 3])
-    		res_classifier.load_state_dict(torch.load('models225/' + model))
 
-            # Get everything but the last last_layer
-            res_feature_cube = nn.Sequential(*list(res_classifier.children())[:-1])
+        self.criterion = nn.MSELoss(size_average=False)
+        # Backprop Through Time (Recurrent Layer) Params
+        self.model          = kwargs['model']
+        self.noutputs       = kwargs['noutputs']
+        self.num_layers     = kwargs['numLayers']
+        self.input_size     = kwargs['inputSize']
+        self.hidden_size    = kwargs['nHidden']
+        self.batch_size     = kwargs['batchSize']
+        self.noutputs       = kwargs['noutputs']
+        self.cuda           = kwargs['cuda']
+
+        for key in kwargs:
+            # print("(%s: %s)" % (key, kwargs[key]))
+            self.key = kwargs[key]
+            # print(type(key))
+
+        self.criterion = nn.MSELoss(size_average=False)
+        self.fc = nn.Linear(64, self.noutputs)
+
+        #obtain model
+        def build_regressor(self):
+            res_classifier = ResNet(ResidualBlock, [3, 3, 3])
+
+            if self.model is not None:    #use pre-trained classifier
+    		      res_classifier.load_state_dict(torch.load('models225/' + self.model))
+
+            # Get everything but the classifier fc (last) layer
+            res_feat_cube = nn.Sequential(*list(res_classifier.children())[:-1])
+
+            #reshape last layer for input of bounding box coords
+            resnet_feat_cube = resnet_feat_cube.view(res_feat_cube.size(0), -1)
+            resnet_feat_cube = self.fc(resnet_feat_cube)
 
             return res_feature_cube
         self.res_classifier = build_regressor
-
-        # Backprop Through Time (Recurrent Layer) Params
-        self.cost = nn.MSELoss(size_average=False)
-        self.noutputs = noutputs
-        self.num_layers = numLayers
-        self.input_size  = inputSize
-        self.hidden_size = nHidden
-        self.batch_size  = batchSize
-        self.noutputs = noutputs
-        self.criterion = nn.MSELoss(size_average=False)
 
         """
         Now stack an LSTM on top of the convnet to generate bounding box predictions
@@ -146,10 +140,10 @@ class StackRegressive(nn.Module)
         """
 
         #define the recurrent connections
-        self.lstm1 = nn.LSTM(inputSize, nHidden[0], numLayers)
-        self.lstm2 = nn.LSTM(nHidden[0], nHidden[1], numLayers)
-        self.lstm3 = nn.LSTM(nHidden[1], nHidden[2], noutputs)
-        self.fc    = nn.Linear(nHidden[2], noutputs)
+        self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers)
+        self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers)
+        self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.noutputs)
+        self.fc    = nn.Linear(self.hidden_size[2], self.noutputs)
         self.drop  = nn.Dropout(0.3)
 
     def forward(self, x):
@@ -157,21 +151,34 @@ class StackRegressive(nn.Module)
 
         out = self.build_regressor(x)
         #set initial states
-        h0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]).cuda())
-        c0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]).cuda())
+        h0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
+        c0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
+
+        if self.cuda:
+            h0.data = h0.data.cuda()
+            c0.data = c0.data.cuda()
         # Forward propagate RNN layer 1
         out, _ = self.lstm1(x, (h0, c0))
         out = self.drop(out)
 
         # Set hidden layer 2 states
-        h1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]).cuda())
-        c1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]).cuda())
+        h1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]))
+        c1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]))
+
+        if self.cuda:
+            h1.data = h1.data.cuda()
+            c1.data = c1.data.cuda()
         # Forward propagate RNN layer 2
         out, _ = self.lstm2(out, (h1, c1))
 
         # Set hidden layer 3 states
-        h2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]).cuda())
-        c2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]).cuda())
+        h2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]))
+        c2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]))
+
+        if self.cuda:
+            h2.data = h2.data.cuda()
+            c2.data = c2.data.cuda()
+
         # Forward propagate RNN layer 2
         out, _ = self.lstm3(out, (h2, c2))
         out = self.drop(out)
@@ -180,3 +187,5 @@ class StackRegressive(nn.Module)
         out = self.fc(out[:, -1, :])
 
         out = out.view(nBatch, -1)
+
+        return out
