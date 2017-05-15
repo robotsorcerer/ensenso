@@ -38,7 +38,7 @@ from model import ResNet, ResidualBlock, StackRegressive
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--cuda', action='store_true', help="use cuda or not?")
+parser.add_argument('--cuda', action='store_false', default=False, help="use cuda or not?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=200, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -164,7 +164,7 @@ class LoadAndParse(object):
         self.real_labels = [1]*len(self.true_images)  #faces
         # self.fake_labels = [0]*len(fake_images)  #backgrounds
 
-        imagesAll = self.true_images #+ fake_images
+        imagesAll = self.true_images
 
         # Now preprocess and create list for images
         for imgs in imagesAll:
@@ -196,8 +196,8 @@ class LoadAndParse(object):
         train_Y = torch.from_numpy(np.array(self.real_labels[:X_tr]))
 
         # bounding box data
-        bbox_X = torch.from_numpy(self.face_left_right[:X_tr]).double()
-        bbox_Y = torch.from_numpy(self.face_left_right[X_tr:]).double()
+        bbox   = torch.from_numpy(self.face_left_right).double()
+        bbox = bbox.unsqueeze(0).expand(1, bbox.size(0), bbox.size(1))
 
         #testing set
         test_X = torch.stack(self.real_images[X_tr:], 0)
@@ -214,7 +214,8 @@ class LoadAndParse(object):
                             batch_size=self.args.cbatchSize, shuffle=True)
 
         #bbox loader
-        bbox_loader = { 'bbox_X': bbox_X, 'bbox_Y': bbox_Y }
+        bbox_dataset = data.TensorDataset(bbox, bbox)
+        bbox_loader = data.DataLoader(bbox_dataset, batch_size=self.args.cbatchSize, shuffle=True)
 
         #check size of slices
         if self.args.verbose:
@@ -292,87 +293,72 @@ def trainRegressor(args, bbox_loader):
     bounding boxes
     """
     #hyperparameters
-    inputSize = 64
-    nHidden = [64, 32, 16]
-    noutputs = 12
-    batchSize = args.cbatchSize
-    numLayers = 2
-    lr=args.rnnLR
-    maxIter = args.cmaxIter
-
-    '''
-    #extract feture cube of last layer and reshape it
-    res_classifier = ResNet(ResidualBlock, [3, 3, 3])
-
-    if args.classifier is not None:    #use pre-trained classifier
-          res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
-
-    # Get everything but the classifier fc (last) layer
-    res_cube = list(res_classifier.children()).pop()
-    #reshape last layer for input of bounding box coords
-    res_cube.append(nn.Linear(inputSize), inputSize)
-    '''
-
-    bbox_X = bbox_loader['bbox_X']
-    bbox_Y = bbox_loader['bbox_Y']
-
-    if(args.cuda):
-        bbox_X = bbox_X.cuda()
-        bbox_Y = bbox_Y.cuda()
-        regressor = regressor#.cuda()
+    numLayers, seqLength = 2, 5
+    noutputs, lr = 12, args.rnnLR
+    inputSize, nHidden = 128, [64, 32, 16]
+    batchSize, maxIter   = args.cbatchSize, args.cmaxIter
 
     #extract feture cube of last layer and reshape it
     res_classifier = ResNet(ResidualBlock, [3, 3, 3])
 
-    if args.classifier is not None:    #use pre-trained classifier
+    if args.classifier:    #use pre-trained classifier
           res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
           res_classifier = nn.Sequential(*list(res_classifier.children()))
 
           #freeze optimized layers
           for param in res_classifier.parameters():
               param.requires_grad = False
-
-    #   res_cube = list(res_classifier.children())[:-1]
+              print(param)
     params_list = []
     #accumalate all the features of the fc layer into a list
     for p in res_classifier.fc.parameters():
         params_list.append(p)  #will contain weighs and biases
-
     params_weight, params_bias = params_list[0], params_list[1]
-
     #reshape params_weight
-    params_weight = params_weight.view(128, -1)
-    #xavier initialize recurrent layer
+    params_weight = params_weight.view(128)
+    # params = torch.cat((params_list[0], params_list[1]), 0)
+    # print(params.size())
 
+    X_tr = int(0.8*len(params_weight))
+    X_te = int(0.2*len(params_weight))
+    X = len(params_weight)
+
+
+    #reshape inputs
+    train_X = torch.unsqueeze(params_weight, 0).expand(seqLength, 1, X)
+    test_X = torch.unsqueeze(params_weight[X_tr:], 0).expand(seqLength, 1, X_te+1)
     # Get regressor model and predict bounding boxes
     regressor = StackRegressive(res_cube=res_classifier, inputSize=128, nHidden=[64,32,12], noutputs=12,\
                           batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
+
+    if(args.cuda):
+        train_X = train_X.cuda()
+        test_X  = test_X.cuda()
+        # regressor = regressor.cuda()
+
     #define optimizer
     optimizer = optim.SGD(regressor.parameters(), lr)
 
     # Forward + Backward + Optimize
     for epoch in xrange(maxIter): #run through the images maxIter times
-        # bbox_Y = Variable(bbox_Y[i, i+batchSize,])
+        for i, (targ_X, _) in enumerate(bbox_loader):
+            if args.cuda:
+                targ_X = targ_X.cuda()
+            inputs = train_X
+            targets = Variable(targ_X[:,i:i+seqLength,:])
 
-        for i in xrange(len(bbox_X)):
-            print(res_cube)
-            #reshape last layer for input of bounding box coords
-            # res_cube.append(nn.Linear(inputSize, inputSize))
+            outputs = regressor(inputs)
 
-            # images = Variable(train_X[i:i+batchSize,:,:,:])
-            # labels = Variable(train_Y[i:i+batchSize,])
-            # print(bbox_X[i:i+batchSize])
-            outputs = regressor(res_cube)
-            targets = Variable(params_weight)
+            #reshape targets for inputs
+            targets = targets.view(seqLength, -1)
 
             loss    = regressor.criterion(outputs, targets)
             loss.backward()
             optimizer.step()
 
             # if (epoch % 10) == 0:
-            print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.4f}'.format(
-                epoch, epoch+batchSize, bbox_X.data.size(0),
-                float(i+batchSize)/bbox_X.data.size(0)*100,
+            print('Epoch: {}, \tLoss: {:.4f}'.format(
+                epoch,
                 loss.data[0]))
 
 def main(args):

@@ -100,7 +100,6 @@ class StackRegressive(nn.Module):
 
         self.criterion = nn.MSELoss(size_average=False)
         # Backprop Through Time (Recurrent Layer) Params
-        self.model          = kwargs['model']
         self.noutputs       = kwargs['noutputs']
         self.num_layers     = kwargs['numLayers']
         self.input_size     = kwargs['inputSize']
@@ -108,30 +107,9 @@ class StackRegressive(nn.Module):
         self.batch_size     = kwargs['batchSize']
         self.noutputs       = kwargs['noutputs']
         self.cuda           = kwargs['cuda']
-        self.res_cube       = kwargs['res_classifier']
-
-        for key in kwargs:
-            # print("(%s: %s)" % (key, kwargs[key]))
-            self.key = kwargs[key]
-            # print(type(key))
 
         self.criterion = nn.MSELoss(size_average=False)
-        self.fc = nn.Linear(64, self.noutputs)
-
-        #obtain model
-        def build_regressor(self):
-            #extract feture cube of last layer and reshape it
-            res_classifier = ResNet(ResidualBlock, [3, 3, 3])
-
-            if args.classifier is not None:    #use pre-trained classifier
-        	      res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
-
-            # Get everything but the classifier fc (last) layer
-            res_cube = list(res_classifier.children()).pop()
-            #reshape last layer for input of bounding box coords
-            res_cube.append(nn.Linear(inputSize), inputSize)
-            return res_feature_cube
-        self.res_classifier = build_regressor
+        self.fc = nn.Linear(32, self.noutputs)
 
         """
         Now stack an LSTM on top of the convnet to generate bounding box predictions
@@ -140,53 +118,25 @@ class StackRegressive(nn.Module):
         """
 
         #define the recurrent connections
-        self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers)
-        self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers)
-        self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.noutputs)
-        self.fc    = nn.Linear(self.hidden_size[2], self.noutputs)
-        self.drop  = nn.Dropout(0.3)
+        self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers, bias=False, batch_first=False, dropout=0.3)
+        self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
+        self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.noutputs, bias=False, batch_first=False, dropout=0.3)
+        self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
 
     def forward(self, x):
         nBatch = x.size(0)
 
-        # out = self.res_classifier(x)
-
-        #set initial states
-        h0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
-        c0 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[0]))
-
-        if self.cuda:
-            h0.data = h0.data.cuda()
-            c0.data = c0.data.cuda()
         # Forward propagate RNN layer 1
-        out, _ = self.lstm1(x, (h0, c0))
-        out = self.drop(out)
-
-        # Set hidden layer 2 states
-        h1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]))
-        c1 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[1]))
-
-        if self.cuda:
-            h1.data = h1.data.cuda()
-            c1.data = c1.data.cuda()
-        # Forward propagate RNN layer 2
-        out, _ = self.lstm2(out, (h1, c1))
-
-        # Set hidden layer 3 states
-        h2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]))
-        c2 = Variable(torch.Tensor(self.num_layers, self.batch_size, self.hidden_size[2]))
-
-        if self.cuda:
-            h2.data = h2.data.cuda()
-            c2.data = c2.data.cuda()
+        out, state_0 = self.lstm1(x)
 
         # Forward propagate RNN layer 2
-        out, _ = self.lstm3(out, (h2, c2))
-        out = self.drop(out)
+        out, state_1 = self.lstm2(out)
+        print('out b4 view: ', out)
 
         # Decode hidden state of last time step
         out = self.fc(out[:, -1, :])
 
         out = out.view(nBatch, -1)
+        print('out after view: ', out)
 
         return out
