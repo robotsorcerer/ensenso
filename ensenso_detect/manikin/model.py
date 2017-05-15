@@ -120,7 +120,6 @@ class StackRegressive(nn.Module):
         #define the recurrent connections
         self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
-        self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.noutputs, bias=False, batch_first=False, dropout=0.3)
         self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
 
     def forward(self, x):
@@ -131,12 +130,10 @@ class StackRegressive(nn.Module):
 
         # Forward propagate RNN layer 2
         out, state_1 = self.lstm2(out)
-        print('out b4 view: ', out)
 
         # Decode hidden state of last time step
         out = self.fc(out[:, -1, :])
 
         out = out.view(nBatch, -1)
-        print('out after view: ', out)
 
         return out

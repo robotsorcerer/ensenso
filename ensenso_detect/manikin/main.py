@@ -16,6 +16,7 @@ from os import listdir
 #torch utils
 import torch
 import torch.nn as nn
+import torch.nn.init as init
 import torch.optim as optim
 import torch.utils.data as data
 import torchvision.models as models
@@ -44,7 +45,7 @@ parser.add_argument('--cmaxIter', type=int, default=200, help="classfier max ite
 parser.add_argument('--num_iter', type=int, default=5)
 parser.add_argument('--cbatchSize', type=int, default=1, help="classifier batch size")
 parser.add_argument('--clr', type=float, default=1e-3, help="classifier learning rate")
-parser.add_argument('--rnnLR', type=float, default=5e-3, help="regressor learning rate")
+parser.add_argument('--rnnLR', type=float, default=1e-3, help="regressor learning rate")
 parser.add_argument('--classifier', type=str, default='resnet_acc=97_iter=1000.pkl')
 parser.add_argument('--cepoch', type=int, default=500)
 parser.add_argument('--verbose', type=bool, default=False)
@@ -243,8 +244,6 @@ def trainClassifier(train_loader, resnet, args):
                 train_Y = train_Y.cuda()
                 resnet  = resnet.cuda()
 
-            # images = Variable(train_X[i:i+batchSize,:,:,:])
-            # labels = Variable(train_Y[i:i+batchSize,])
             images = Variable(train_X)
             labels = Variable(train_Y)
 
@@ -255,14 +254,8 @@ def trainClassifier(train_loader, resnet, args):
             loss.backward()
             clsfx_optimizer.step()
 
-            # if(epoch %2 == 0):
-            # print(enumerate(train_loader)())
             print ("Epoch [%d/%d], Iter [%d] Loss: %.8f" %(epoch+1, maxIter, i+1, loss.data[0]))
 
-            # Decaying Learning Rate
-            # if (epoch+1) % 50 == 0:
-            #     lr /= 3
-            #     clsfx_optimizer = torch.optim.Adam(resnet.parameters(), lr=lr)
     return resnet
 
 def testClassifier(test_loader, resnet, args):
@@ -295,7 +288,7 @@ def trainRegressor(args, bbox_loader):
     #hyperparameters
     numLayers, seqLength = 2, 5
     noutputs, lr = 12, args.rnnLR
-    inputSize, nHidden = 128, [64, 32, 16]
+    inputSize, nHidden = 128, [64, 32]
     batchSize, maxIter   = args.cbatchSize, args.cmaxIter
 
     #extract feture cube of last layer and reshape it
@@ -312,7 +305,7 @@ def trainRegressor(args, bbox_loader):
     params_list = []
     #accumalate all the features of the fc layer into a list
     for p in res_classifier.fc.parameters():
-        params_list.append(p)  #will contain weighs and biases
+        params_list.append(p)  #will contain weights and biases
     params_weight, params_bias = params_list[0], params_list[1]
     #reshape params_weight
     params_weight = params_weight.view(128)
@@ -323,13 +316,17 @@ def trainRegressor(args, bbox_loader):
     X_te = int(0.2*len(params_weight))
     X = len(params_weight)
 
-
     #reshape inputs
     train_X = torch.unsqueeze(params_weight, 0).expand(seqLength, 1, X)
     test_X = torch.unsqueeze(params_weight[X_tr:], 0).expand(seqLength, 1, X_te+1)
     # Get regressor model and predict bounding boxes
     regressor = StackRegressive(res_cube=res_classifier, inputSize=128, nHidden=[64,32,12], noutputs=12,\
                           batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
+
+    #initialize the weights of the network with xavier uniform initialization
+    for name, weights in regressor.named_parameters():
+        #use normal initialization for now
+        init.uniform(weights, 0, 1)
 
     if(args.cuda):
         train_X = train_X.cuda()
@@ -340,26 +337,36 @@ def trainRegressor(args, bbox_loader):
     optimizer = optim.SGD(regressor.parameters(), lr)
 
     # Forward + Backward + Optimize
-    for epoch in xrange(maxIter): #run through the images maxIter times
-        for i, (targ_X, _) in enumerate(bbox_loader):
-            if args.cuda:
-                targ_X = targ_X.cuda()
+    targ_X = None
+
+    for _, targ_X in bbox_loader:
+        targ_X = targ_X
+
+    if args.cuda:
+        targ_X = targ_X.cuda()
+
+    for epoch in xrange(maxIter):
+        for i in xrange(targ_X.size(1)*10):
             inputs = train_X
             targets = Variable(targ_X[:,i:i+seqLength,:])
 
+            optimizer.zero_grad()
             outputs = regressor(inputs)
-
             #reshape targets for inputs
             targets = targets.view(seqLength, -1)
-
             loss    = regressor.criterion(outputs, targets)
             loss.backward()
             optimizer.step()
 
-            # if (epoch % 10) == 0:
-            print('Epoch: {}, \tLoss: {:.4f}'.format(
-                epoch,
-                loss.data[0]))
+            # print(epoch)
+            if epoch % 5 == 0 and epoch >0 :
+                lr *= 1./epoch
+                optimizer = optim.SGD(regressor.parameters(), lr)
+            print('Epoch: {}, \tIter: {}, \tLoss: {:.4f}'.format(
+                epoch, i, loss.data[0]))
+
+            if i+seqLength >= int(targ_X.size(1)):
+                break
 
 def main(args):
     #obtain training and testing data
