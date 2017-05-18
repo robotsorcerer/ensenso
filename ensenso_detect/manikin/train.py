@@ -335,7 +335,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             #     break
     return resnet, regressor, rtest_X
 
-def testClassifierRegressor(test_loader, resnet, regressnet, args, rtest_X):
+def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
     correct, total = 0, 0
 
     rtest_X = rtest_X.cuda() if args.cuda else x
@@ -359,7 +359,7 @@ def testClassifierRegressor(test_loader, resnet, regressnet, args, rtest_X):
 
     # Save the Models
     torch.save(resnet.state_dict(), 'resnet_'+ str(score) + str(args.cmaxIter))
-    torch.save(regressnet.state_dict(), 'regressnet' + str(args.cmaxIter))
+    torch.save(regressnet.state_dict(), 'regressnet_' + str(args.cmaxIter))
 
     #test regressor
     # for i in range(rtest_X.size(2)):
@@ -373,11 +373,11 @@ def main(args):
     train_loader, test_loader, bbox_loader = lnp.partitionData()
 
     # train  conv+rnn nets
-    net, reg, rtest_X, bbox_loader = \
+    net, reg, rtest_X = \
                 trainClassifierRegressor(train_loader, bbox_loader, args)
 
     # test conv+rnn nets
-    testClassifierRegressor(test_loader, net, reg, args, rtest_X)
+    testClassifierRegressor(test_loader, net, reg, rtest_X, args)
 
 if __name__=='__main__':
     main(args)
