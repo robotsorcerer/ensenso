@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 
-import torch
 import os
-from os import listdir
+import torch
 from PIL import Image
-from PIL import ImageFont, ImageDraw
+from os import listdir
 from torch.autograd import Variable
+from PIL import ImageFont, ImageDraw
+
 import json
 import argparse
-import torchvision.transforms as transforms
 import torch.utils.data as data
+import torchvision.models as models
+import torchvision.transforms as transforms
 
 import numpy as np
 from random import shuffle
@@ -198,6 +200,9 @@ def main():
 	tr_loader, test_X  = lnp.getImagesAsTensors()
 
 	base, ext = os.path.splitext(args.model)
+
+    model = models.resnet18(pretrained=False)
+	'''
 	if (ext == ".pkl"):  #using high score model
 		model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
 		model.load_state_dict(torch.load('models225/' + args.model))
@@ -205,12 +210,13 @@ def main():
 	else:
 		model = torch.load('models225/' + args.model)
 		model.eval()
+	'''
 
 	if not args.cuda:
 		model.cpu()
 
 	#get last layer from resnet
-	last_layer = nn.Sequential(*list(model.children()))
+	last_layer = nn.Sequential(*list(model.children())[:-1])
 	model.classifier = last_layer
 
 	print(last_layer)

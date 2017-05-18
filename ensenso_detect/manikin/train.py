@@ -4,7 +4,7 @@ __author__ = 'Olalekan Ogunmolu'
 
 #py utils
 import os
-import json
+import json, time
 import argparse
 from PIL import Image
 from os import listdir
@@ -15,6 +15,7 @@ from os import listdir
 
 #torch utils
 import torch
+import torchvision
 import torch.nn as nn
 import torch.nn.init as init
 import torch.optim as optim
@@ -22,6 +23,7 @@ import torch.utils.data as data
 import torchvision.models as models
 from torch.autograd import Variable
 import torchvision.transforms as transforms
+from torch.nn.functional import softmax
 
 #cv2/numpy utils
 import cv2
@@ -39,14 +41,14 @@ from model import ResNet, ResidualBlock, StackRegressive
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--cuda', action='store_false', default=False, help="use cuda or not?")
+parser.add_argument('--cuda', action='store_true', default=False, help="use cuda or not?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
-parser.add_argument('--cmaxIter', type=int, default=200, help="classfier max iterations")
+parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
 parser.add_argument('--cbatchSize', type=int, default=1, help="classifier batch size")
 parser.add_argument('--clr', type=float, default=1e-3, help="classifier learning rate")
 parser.add_argument('--rnnLR', type=float, default=1e-3, help="regressor learning rate")
-parser.add_argument('--classifier', type=str, default='resnet_acc=97_iter=1000.pkl')
+parser.add_argument('--classifier', type=str, default='')
 parser.add_argument('--cepoch', type=int, default=500)
 parser.add_argument('--verbose', type=bool, default=False)
 args = parser.parse_args()
@@ -71,7 +73,6 @@ class LoadAndParse(object):
            transforms.RandomHorizontalFlip(),
            transforms.RandomCrop(32),
            transforms.ToTensor()
-        #    self.normalize
         ])
 
         #provide path to true and fake images
@@ -95,7 +96,6 @@ class LoadAndParse(object):
         self.face_left_right = None
         #define tensors to hold the images in memory
         self.real_images, self.real_labels  = [], []
-
 
     # #load labels file
     def loadLabelsFromJson(self):
@@ -163,7 +163,6 @@ class LoadAndParse(object):
 
         #define labels
         self.real_labels = [1]*len(self.true_images)  #faces
-        # self.fake_labels = [0]*len(fake_images)  #backgrounds
 
         imagesAll = self.true_images
 
@@ -225,15 +224,66 @@ class LoadAndParse(object):
 
         return train_loader, test_loader, bbox_loader
 
-def trainClassifier(train_loader, resnet, args):
-    #hyperparameters
-    lr = args.clr
+def trainClassifierRegressor(train_loader, bbox_loader, args):
+    #cnn hyperparameters
+    clr = args.clr
     batchSize = args.cbatchSize
     maxIter = args.cmaxIter
 
+    #rnn hyperparameters
+    numLayers, seqLength = 2, 5
+    noutputs, rlr = 12, args.rnnLR
+    inputSize, nHidden = 128, [64, 32]
+
+    resnet = ResNet(ResidualBlock, [3, 3, 3])
+
+    #extract feture cube of last layer and reshape it
+    res_classifier, feature_cube = None, None
+    if args.classifier:    #use pre-trained classifier
+      res_classifier = ResNet(ResidualBlock, [3, 3, 3])
+      res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
+      print('using pretrained model')
+    #   #freeze optimized layers
+      for param in res_classifier.parameters():
+          param.requires_grad = False
+      res_classifier
+
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
-    clsfx_optimizer = torch.optim.Adam(resnet.parameters(), lr)
+    clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
+
+    last_layer, feat_cube = resnet.fc, []
+    #accummulate all the features of the fc layer into a list
+    for param in last_layer.parameters():
+        feat_cube.append(param)  #will contain weights and biases
+    regress_input, params_bias = feat_cube[0], feat_cube[1]
+
+    #reshape regress_input
+    regress_input = regress_input.view(-1)
+
+    X_tr = int(0.8*len(regress_input))
+    X_te = int(0.2*len(regress_input))
+    X = len(regress_input)
+
+    #reshape inputs
+    rtrain_X = torch.unsqueeze(regress_input, 0).expand(seqLength, 1, X)
+    rtest_X = torch.unsqueeze(regress_input[X_tr:], 0).expand(seqLength, 1, X_te+1)
+    # Get regressor model and predict bounding boxes
+    regressor = StackRegressive(inputSize=128, nHidden=[64,32,12], noutputs=12,\
+                          batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
+
+    targ_X = None
+    for _, targ_X in bbox_loader:
+        targ_X = targ_X
+
+    if(args.cuda):
+        rtrain_X = rtrain_X.cuda()
+        rtest_X  = rtest_X.cuda()
+        targ_X = targ_X.cuda()
+        # regressor = regressor.cuda()
+
+    #define optimizer
+    rnn_optimizer = optim.SGD(regressor.parameters(), rlr)
 
     # Train classifier
     for epoch in range(maxIter): #run through the images maxIter times
@@ -246,147 +296,88 @@ def trainClassifier(train_loader, resnet, args):
 
             images = Variable(train_X)
             labels = Variable(train_Y)
+            #rnn input
+            rtargets = Variable(targ_X[:,i:i+seqLength,:])
+            #reshape targets for inputs
+            rtargets = rtargets.view(seqLength, -1)
 
             # Forward + Backward + Optimize
             clsfx_optimizer.zero_grad()
+            rnn_optimizer.zero_grad()
+
+            #predict classifier outs and regressor outputs
             outputs = resnet(images)
+            routputs = regressor(rtrain_X)
+
+            #compute loss
             loss = clsfx_crit(outputs, labels)
+            rloss    = regressor.criterion(routputs, rtargets)
+
+            #backward pass
             loss.backward()
+            rloss.backward()
+
+            # step optimizer
             clsfx_optimizer.step()
+            rnn_optimizer.step()
 
-            print ("Epoch [%d/%d], Iter [%d] Loss: %.8f" %(epoch+1, maxIter, i+1, loss.data[0]))
+            print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f" %(epoch+1, maxIter, i+1,
+                                                loss.data[0], rloss.data[0]))
 
-    return resnet
+            if epoch % 5 == 0 and epoch >0:
+                clr *= 1./epoch
+                rlr *= 1./epoch
 
-def testClassifier(test_loader, resnet, args):
+                clsfx_optimizer = optim.Adam(resnet.parameters(), clr)
+                rnn_optimizer   = optim.SGD(regressor.parameters(), rlr)
+
+            # if i+seqLength >= int(targ_X.size(1)):
+            #     break
+    return resnet, regressor, rtest_X
+
+def testClassifierRegressor(test_loader, resnet, regressnet, args, rtest_X):
     correct, total = 0, 0
+
+    rtest_X = rtest_X.cuda() if args.cuda else x
     for test_X, test_Y in test_loader:
-        if(args.cuda):
-            test_X = test_X.cuda()
+
+        test_X = test_X.cuda() if args.cuda else test_X
         images = Variable(test_X)
         labels = test_Y
+
+        #forward
         outputs = resnet(images)
+        routputs = regressnet(rtest_X)
+
+        #check predcictions
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted.cpu() == labels).sum()
 
     score = 100 * correct / total
-
     print('Accuracy of the model on the test images: %d %%' %(score))
 
-    # Save the Model
+    # Save the Models
     torch.save(resnet.state_dict(), 'resnet_'+ str(score) + str(args.cmaxIter))
+    torch.save(regressnet.state_dict(), 'regressnet' + str(args.cmaxIter))
 
-def trainRegressor(args, bbox_loader):
-    r"""
-    Following the interpretable learning from self-driving examples:
-    https://arxiv.org/pdf/1703.10631.pdf   we can extract the last
-    feature cube x_t from the resnet model as a set of L = W x H
-    vectors of depth D, and stack a regressor module to obtain
-    bounding boxes
-    """
-    #hyperparameters
-    numLayers, seqLength = 2, 5
-    noutputs, lr = 12, args.rnnLR
-    inputSize, nHidden = 128, [64, 32]
-    batchSize, maxIter   = args.cbatchSize, args.cmaxIter
-
-    #extract feture cube of last layer and reshape it
-    res_classifier = ResNet(ResidualBlock, [3, 3, 3])
-
-    if args.classifier:    #use pre-trained classifier
-          res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
-          res_classifier = nn.Sequential(*list(res_classifier.children()))
-
-          #freeze optimized layers
-          for param in res_classifier.parameters():
-              param.requires_grad = False
-              print(param)
-    params_list = []
-    #accumalate all the features of the fc layer into a list
-    for p in res_classifier.fc.parameters():
-        params_list.append(p)  #will contain weights and biases
-    params_weight, params_bias = params_list[0], params_list[1]
-    #reshape params_weight
-    params_weight = params_weight.view(128)
-    # params = torch.cat((params_list[0], params_list[1]), 0)
-    # print(params.size())
-
-    X_tr = int(0.8*len(params_weight))
-    X_te = int(0.2*len(params_weight))
-    X = len(params_weight)
-
-    #reshape inputs
-    train_X = torch.unsqueeze(params_weight, 0).expand(seqLength, 1, X)
-    test_X = torch.unsqueeze(params_weight[X_tr:], 0).expand(seqLength, 1, X_te+1)
-    # Get regressor model and predict bounding boxes
-    regressor = StackRegressive(res_cube=res_classifier, inputSize=128, nHidden=[64,32,12], noutputs=12,\
-                          batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
-
-    #initialize the weights of the network with xavier uniform initialization
-    for name, weights in regressor.named_parameters():
-        #use normal initialization for now
-        init.uniform(weights, 0, 1)
-
-    if(args.cuda):
-        train_X = train_X.cuda()
-        test_X  = test_X.cuda()
-        # regressor = regressor.cuda()
-
-    #define optimizer
-    optimizer = optim.SGD(regressor.parameters(), lr)
-
-    # Forward + Backward + Optimize
-    targ_X = None
-
-    for _, targ_X in bbox_loader:
-        targ_X = targ_X
-
-    if args.cuda:
-        targ_X = targ_X.cuda()
-
-    for epoch in xrange(maxIter):
-        for i in xrange(targ_X.size(1)*10):
-            inputs = train_X
-            targets = Variable(targ_X[:,i:i+seqLength,:])
-
-            optimizer.zero_grad()
-            outputs = regressor(inputs)
-            #reshape targets for inputs
-            targets = targets.view(seqLength, -1)
-            loss    = regressor.criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-
-            # print(epoch)
-            if epoch % 5 == 0 and epoch >0 :
-                lr *= 1./epoch
-                optimizer = optim.SGD(regressor.parameters(), lr)
-            print('Epoch: {}, \tIter: {}, \tLoss: {:.4f}'.format(
-                epoch, i, loss.data[0]))
-
-            if i+seqLength >= int(targ_X.size(1)):
-                break
+    #test regressor
+    # for i in range(rtest_X.size(2)):
+    #     routputs = regressnet(rtest_X)
+    #     print('ground truth bounding box: ', bbox)
+    #     rpredictions =
 
 def main(args):
     #obtain training and testing data
     lnp = LoadAndParse(args)
     train_loader, test_loader, bbox_loader = lnp.partitionData()
 
-    #obtain classification model
-    resnet = ResNet(ResidualBlock, [3, 3, 3])
+    # train  conv+rnn nets
+    net, reg, rtest_X, bbox_loader = \
+                trainClassifierRegressor(train_loader, bbox_loader, args)
 
-    # train classifier
-    # net = trainClassifier(train_loader, resnet, args)
-
-    # test classifier and save classifier model
-    # testClassifier(test_loader, resnet, args)
-
-    #train regrerssor
-    # bbox = lnp.face_left_right
-    trainRegressor(args, bbox_loader)
-
-    # Now stack regressive model on top of feature_cube of classifier
+    # test conv+rnn nets
+    testClassifierRegressor(test_loader, net, reg, args, rtest_X)
 
 if __name__=='__main__':
     main(args)

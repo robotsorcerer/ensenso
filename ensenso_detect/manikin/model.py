@@ -122,6 +122,11 @@ class StackRegressive(nn.Module):
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
 
+        if self.cuda:
+            self.lstm1 = self.lstm1.cuda()
+            self.lstm2 = self.lstm2.cuda()
+            self.fc    = self.fc.cuda()
+
     def forward(self, x):
         nBatch = x.size(0)
 
