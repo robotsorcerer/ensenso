@@ -43,38 +43,6 @@ class Net(nn.Module):
         out3 = F.relu(self.conv3(out2))
         return out1, out2, out3
 
-# fetch the intermediate values when the forward
-# behavior is defined by nn.Sequential()
-class SelectiveSequential(nn.Module):
-    def __init__(self, to_select, modules_dict):
-        super(SelectiveSequential, self).__init__()
-        for key, module in modules_dict.items():
-            self.add_module(key, module)
-        self._to_select = to_select
-
-    def forward(x):
-        lister = []
-        for name, module in self._modules.iteritems():
-            x = module(x)
-            if name in self._to_select:
-                lister.append(x)
-        return lister
-
-# use selective sequential like this
-class Net_SelectiveSequential(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.features = SelectiveSequential(
-            ['conv1', 'conv3'],
-            {'conv1': nn.Conv2d(1, 1, 3),
-             'conv2': nn.Conv2d(1, 1, 3),
-             'conv3': nn.Conv2d(1, 1, 3)}
-        )
-
-    def forward(self, x):
-        return self.features(x)
-
-
 class loadAndParse():
 
 	def __init__(self, args, true_path="raw/face_pos/", fake_path="raw/face_pos/"):

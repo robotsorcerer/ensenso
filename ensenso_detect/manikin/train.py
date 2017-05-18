@@ -32,9 +32,9 @@ import numpy.random as npr
 from random import shuffle
 
 import sys
-# from IPython.core import ultratb
-# sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-#      color_scheme='Linux', call_pdb=1)
+from IPython.core import ultratb
+sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+     color_scheme='Linux', call_pdb=1)
 
 #myne utils
 from model import ResNet, ResidualBlock, StackRegressive
@@ -47,7 +47,7 @@ parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iter
 parser.add_argument('--num_iter', type=int, default=5)
 parser.add_argument('--cbatchSize', type=int, default=1, help="classifier batch size")
 parser.add_argument('--clr', type=float, default=1e-3, help="classifier learning rate")
-parser.add_argument('--rnnLR', type=float, default=1e-3, help="regressor learning rate")
+parser.add_argument('--rnnLR', type=float, default=1e-2, help="regressor learning rate")
 parser.add_argument('--classifier', type=str, default='')
 parser.add_argument('--cepoch', type=int, default=500)
 parser.add_argument('--verbose', type=bool, default=False)
@@ -240,13 +240,11 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     #extract feture cube of last layer and reshape it
     res_classifier, feature_cube = None, None
     if args.classifier:    #use pre-trained classifier
-      res_classifier = ResNet(ResidualBlock, [3, 3, 3])
-      res_classifier.load_state_dict(torch.load('models225/' + args.classifier))
+      resnet.load_state_dict(torch.load('models225/' + args.classifier))
       print('using pretrained model')
     #   #freeze optimized layers
-      for param in res_classifier.parameters():
+      for param in resnet.parameters():
           param.requires_grad = False
-      res_classifier
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
@@ -331,14 +329,13 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 clsfx_optimizer = optim.Adam(resnet.parameters(), clr)
                 rnn_optimizer   = optim.SGD(regressor.parameters(), rlr)
 
-            # if i+seqLength >= int(targ_X.size(1)):
-            #     break
+    torch.save(regressor.state_dict(), 'regressnet_' + str(args.cmaxIter) + '.pkl')
     return resnet, regressor, rtest_X
 
 def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
     correct, total = 0, 0
 
-    rtest_X = rtest_X.cuda() if args.cuda else x
+    rtest_X = rtest_X.cuda() if args.cuda else rtest_X
     for test_X, test_Y in test_loader:
 
         test_X = test_X.cuda() if args.cuda else test_X
@@ -347,7 +344,7 @@ def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
 
         #forward
         outputs = resnet(images)
-        routputs = regressnet(rtest_X)
+        # routputs = regressnet(rtest_X)
 
         #check predcictions
         _, predicted = torch.max(outputs.data, 1)
@@ -358,14 +355,7 @@ def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
     print('Accuracy of the model on the test images: %d %%' %(score))
 
     # Save the Models
-    torch.save(resnet.state_dict(), 'resnet_'+ str(score) + str(args.cmaxIter))
-    torch.save(regressnet.state_dict(), 'regressnet_' + str(args.cmaxIter))
-
-    #test regressor
-    # for i in range(rtest_X.size(2)):
-    #     routputs = regressnet(rtest_X)
-    #     print('ground truth bounding box: ', bbox)
-    #     rpredictions =
+    torch.save(resnet.state_dict(), 'resnet_score='+ str(score) + '.pkl')
 
 def main(args):
     #obtain training and testing data

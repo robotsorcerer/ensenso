@@ -5,6 +5,8 @@ import torch.optim as optim
 from torch.autograd import Variable
 from random import shuffle
 
+__all__ = ['ResidualBlock', 'ResNet', 'StackRegressive']
+
 torch.set_default_tensor_type('torch.DoubleTensor')
 
 # 3x3 Convolution

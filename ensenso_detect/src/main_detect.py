@@ -16,6 +16,8 @@ import sys, time
 import argparse
 import json, os
 import visdom
+import sys
+import os.path as osp
 
 # numpy and scipy
 import numpy as np
@@ -38,12 +40,17 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torchvision.transforms as transforms
-from utils import ResNet, ResidualBlock
 
-import sys
-# from IPython.core import ultratb
-# sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-#      color_scheme='Linux', call_pdb=1)
+from IPython.core import ultratb
+sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+     color_scheme='Linux', call_pdb=1)
+
+# from utils import ResNet, ResidualBlock
+this_dir = osp.dirname(__file__)
+models_path = osp.join(this_dir, '..', 'manikin')#, 'model')
+sys.path.insert(0, models_path) if models_path not in sys.path else None
+
+from model import ResNet, ResidualBlock, StackRegressive
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -61,7 +68,8 @@ parser.add_argument("--fictitious_pub", type=bool, default=False)
 parser.add_argument("--show", default=True, action="store_true")
 parser.add_argument("--width", type=int, default="1024", help="default spatial dim from ids")
 parser.add_argument("--height", type=int, default="1280", help="default spatial dim from ids")
-parser.add_argument("--net_model", type=str, default="resnet_acc=97_iter=1000.pkl")
+parser.add_argument("--reg_net", type=str, default="regressnet_iter50.pkl")
+parser.add_argument("--conv_net", type=str, default="resnet_score100.pkl")
 args = parser.parse_args()
 
 class ROS_Subscriber(object):
@@ -145,6 +153,7 @@ class ProcessImage(ROS_Subscriber):
         self.counter = 0
         self.vis = visdom.Visdom()
         self.weights = None
+        self.seqLength = 5
         #weights and bias for classifier's fully-connected layer
         self.fc_bias, self.fc_weights = None, None
 
@@ -170,25 +179,30 @@ class ProcessImage(ROS_Subscriber):
         path = rospack.get_path(package_name)
         return path
 
-    def retrieve_net(self, model):
+    def retrieve_net(self, conv_model, regress_model):
         # get ensenso_detect path
         detect_package_path = self.getPackagePath('ensenso_detect')
-        weightspath = detect_package_path + '/manikin/models225/'
+        conv_path = detect_package_path + '/manikin/models225/'
+        weightspath = detect_package_path + '/manikin/models_new/'
 
-        base, ext = os.path.splitext(args.net_model)
-        print(ext)
-        if (ext == ".pkl"):  #using high score model
-            model.load_state_dict(torch.load(weightspath + args.net_model))
-            model.eval()  #critical. Not doing this leads to wrong classification
+        base, ext = os.path.splitext(args.conv_net)
+
+        if (ext == ".pkl"):         #using high score model
+            conv_model.load_state_dict(torch.load(conv_path + args.conv_net))
+            regress_model.load_state_dict(torch.load(weightspath + args.reg_net))
+
+            # set up models for evaluation mode
+            conv_model.eval()
+            regress_model.eval()
         else:
-            model = torch.load(weightspath + args.net_model)
-            model.eval()
-            #
-            # rospy.logwarn("supplied neural net extension is unknown")
-        return model
+            conv_model = torch.load(weightspath + args.conv_net)
+            regress_model = torch.load(weightspath + args.reg_net)
+
+            reg_net.eval()
+            conv_model.eval()
+        return conv_model, regress_model
 
     def process_image(self):
-
         if self.args.fictitious_pub:
             self.ensenso_image = self.fictitious_pub()
         else:
@@ -206,31 +220,60 @@ class ProcessImage(ROS_Subscriber):
         self.rawImgTensor = self.preprocess(self.rawImgTensor.float())
         self.rawImgTensor = self.rawImgTensor.unsqueeze(0)
 
-    def classify(self):
+    def classify_and_draw(self, conv_model, regress_model):
         #pre-pro images first
         total, correct = 0,0
         self.process_image()
-        test_Y = torch.from_numpy(np.array([0, 1]))#, 0)) #self.loadLabelsFromJson()
         test_X = self.rawImgTensor.double()
 
         if(args.cuda):
             test_X = test_X.cuda()
         images = Variable(test_X)
 
-        labels = test_Y
-        outputs = self.args.net(images)
+        conv_model.eval()
+        regress_model.eval()
+
+        outputs = conv_model(images)
         _, predicted = torch.max(outputs.data, 1)
 
-        self.weights = self.args.net.state_dict().items() #
-        self.fc_weights = self.args.net.state_dict()['fc.weight']
-        self.fc_bias = self.args.net.state_dict()['fc.bias']
+        #extract input for regressor
+        last_layer, feat_cube = conv_model.fc, []
+        #accummulate all the features of the fc layer into a list
+        for param in last_layer.parameters():
+            feat_cube.append(param)  #will contain weights and biases
+        regress_input, params_bias = feat_cube[0], feat_cube[1]
 
+        #reshape regress_input
+        regress_input = regress_input.view(-1)
+        rtrain_X = torch.unsqueeze(regress_input, 0).expand(self.seqLength, 1, len(regress_input))
+
+        rtrain_X = rtrain_X.cuda() if self.args.cuda else rtrain_X
+
+        # now forward last fc layer through regressor net to get bbox predictions
+        bounding_box = regress_model(rtrain_X).data[0]
+
+        '''
+        The predicted bounding boxes are are follows:
+
+        First 4 cols represent top and lower coordinates of face boxes,
+        Followed by 2 cols belonging to left eye pixel coords,
+        last 2 cols are the right eye coords
+        '''
+        bbox = []
+        for i in range(bounding_box.size(0)):
+            bbox.append(int(bounding_box[i]))
+
+        # print('bounding box: ', bbox)#, bounding_box[0])
+
+        #this is to allow us see the weights in visdom
+        self.weights = conv_model.state_dict().items() #
+        self.fc_weights = conv_model.state_dict()['fc.weight']
+        self.fc_bias = conv_model.state_dict()['fc.bias']
         #convert the fc weights to np array in order to see the activations in visdom
         fc_weights_np = self.fc_weights.cpu().numpy()
         if args.verbose:
             print('fc_weights: ', fc_weights_np.shape)  # should be torch.cuda.DoubleTensor of size 64
         self.vis.image(fc_weights_np)
-        # print('\n\nfc_bias: ', self.fc_bias)
 
         #collect classes
         index = int(predicted[0][0])
@@ -238,11 +281,14 @@ class ProcessImage(ROS_Subscriber):
 
         #Display
         if self.args.show:
-
             cv2.namedWindow('image', cv2.WINDOW_NORMAL)
             org = img_class + ' face'
 
             cv2.putText(self.ensenso_image, org, (15, 55), cv2.FONT_HERSHEY_PLAIN, 3.5, (255, 150, 0), thickness=2, lineType=cv2.LINE_AA)
+            #draw bounding boxes
+            cv2.rectangle(self.ensenso_image, (bbox[0], bbox[1]), (bbox[6], bbox[7]), (255, 60, 10), 2)
+            cv2.circle(self.ensenso_image, (bbox[8], bbox[9]), 2, (255, 0, 0), 3, 8)
+            cv2.circle(self.ensenso_image, (bbox[10], bbox[11]), 2, (0, 0, 255), 3, 8)
             cv2.imshow('image', self.ensenso_image)
 
             ch = 0xFF & cv2.waitKey(5)
@@ -254,16 +300,18 @@ def main(args):
     rospy.init_node('image_feature', anonymous=True)
 
     proc_img = ProcessImage(args)
-    model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
-    model = proc_img.retrieve_net(model)
+    conv_model = ResNet(ResidualBlock, [3, 3, 3]).cuda()
+    regress_model = StackRegressive(inputSize=128, nHidden=[64,32,12], noutputs=12,\
+                          batchSize=1, cuda=args.cuda, numLayers=2)
+    conv_model, regress_model = proc_img.retrieve_net(conv_model, regress_model)
 
-    if model:
-        args.net = model
+    if conv_model:
+        args.net = conv_model
 
     try:
         rate = rospy.Rate(30)
         while not rospy.is_shutdown():
-            proc_img.classify()
+            proc_img.classify_and_draw(conv_model, regress_model)
             rate.sleep()
 
     except KeyboardInterrupt:
