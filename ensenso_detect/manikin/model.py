@@ -143,4 +143,54 @@ class StackRegressive(nn.Module):
 
         out = out.view(nBatch, -1)
 
-        return out
+        return out, state_1
+
+class RecurrentModel(nn.Module):
+    def __init__(self, **kwargs):
+        super(RecurrentModel, self).__init__()
+        '''
+        See Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
+        Workshop track -ICLR 2016 ACTION RECOGNITION USING VISUAL ATTENTION.
+        Retrieved from https://arxiv.org/pdf/1511.04119.pdf
+        '''
+
+        self.criterion = nn.MSELoss(size_average=False)
+        # Backprop Through Time (Recurrent Layer) Params
+        self.noutputs       = kwargs['noutputs']
+        self.num_layers     = kwargs['numLayers']
+        self.input_size     = kwargs['inputSize']
+        self.hidden_size    = kwargs['nHidden']
+        self.batch_size     = kwargs['batchSize']
+        self.noutputs       = kwargs['noutputs']
+        self.cuda           = kwargs['cuda']
+
+        #define the recurrent connections
+        self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers, bias=False, batch_first=False, dropout=0.3)
+        self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
+        self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.num_layers, bias=False, batch_first=False, dropout=0.3)
+
+        if self.cuda:
+            self.lstm1 = self.lstm1.cuda()
+            self.lstm2 = self.lstm2.cuda()
+            self.lstm3 = self.lstm3.cuda()
+
+    def forward(self, x):
+        nBatch = x.size(2)
+        print('nBatch: ', nBatch)
+
+        # Forward propagate RNN layer 1
+        out, state_0 = self.lstm1(x)
+
+        # Forward propagate RNN layer 2
+        out, state_1 = self.lstm2(out)
+
+
+        # # Forward propagate RNN layer 3
+        out, state_2 = self.lstm3(out)
+
+        # Decode hidden state of last time step
+        out = out[:, -1, :]
+
+        out = out.view(nBatch, -1)
+
+        return out, state_1

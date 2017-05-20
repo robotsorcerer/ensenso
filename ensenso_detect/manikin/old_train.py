@@ -72,8 +72,10 @@ class loadAndParse(object):
 		face_neg_2 = face_neg + '/' + 'neg_2'
 		face_neg_3 = face_neg + '/' + 'neg_3'
 		face_neg_4 = face_neg + '/' + 'neg_4'
+		face_neg_5 = face_neg + '/' + 'neg_5'
 
-		self.neg_dirs = [face_neg_1, face_neg_2, face_neg_3, face_neg_4]
+		# self.neg_dirs = [face_neg_1, face_neg_2, face_neg_3, face_neg_4]
+		self.neg_dirs = [face_neg_5]
 		self.fake_path= fake_path
 
 		#define tensors to hold the images in memory
