@@ -42,7 +42,7 @@ from model import ResNet, ResidualBlock, \
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--cuda', action='store_true', default=False, help="use cuda or not?")
+parser.add_argument('--ship2gpu', action='store_true', default=False, help="use cuda or not?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -58,7 +58,7 @@ torch.set_default_tensor_type('torch.DoubleTensor')
 
 class LoadAndParse(object):
 
-    def __init__(self, args, true_path="raw/face_pos/", fake_path="raw/face_neg/"):
+    def __init__(self, args, true_path="raw/face_images/", fake_path="raw/face_neg/"):
         '''
         from:
         https://github.com/pytorch/examples/blob/409a7262dcfa7906a92aeac25ee7d413baa88b67/imagenet/main.py#L108-L113
@@ -264,11 +264,6 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
         if param.dim() > 1:  # extract only conv cubes
             feat_cube.append(param)
 
-    lt = []  # this contains the soft max attention for each pooled layer
-    for x in xrange(len(feat_cube)):
-        temp = softmax(feat_cube[x])
-        lt.append(temp)
-
     '''
     feat cube contains the feature maps of the last convolution layer. of shape
     64L, 32L, 3L, 3L
@@ -279,7 +274,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     64L, 64L, 3L, 3L
     64L, 64L, 3L, 3L
     '''
-    '''
+
     #max pool the last conv layer
     #define kernel size and width for pooled features
     kernel, stride = 3, 2
@@ -291,45 +286,100 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     for x in xrange(3, 7):
         feat_cube[x] = m(feat_cube[x])
     # print(feat_cube)
-    '''
 
-    inLSTM1 = torch.mul(lt[0], feat_cube[0])
-    inLSTM1 = inLSTM1.view(-1) #will have 2048 connections
-    inLSTM1 = inLSTM1.unsqueeze(0).expand(seqLength, 1, inLSTM1.size(0))
+    lt = []  # this contains the soft max attention for each pooled layer
+    for x in xrange(len(feat_cube)):
+        temp = softmax(feat_cube[x])
+        lt.append(temp)
 
-    inLSTM2 = torch.mul(lt[1], feat_cube[1])
-    inLSTM2 = inLSTM2.view(-1) #4096 connections
-    inLSTM2 = inLSTM2.unsqueeze(0).expand(seqLength, 1, inLSTM2.size(0))
+    """
+    This section is a varioant of this paper:
+    Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
+    ACTION RECOGNITION USING VISUAL ATTENTION. Retrieved from
+    https://arxiv.org/pdf/1511.04119.pdf
 
-    inLSTM3 = torch.mul(lt[2], feat_cube[2])
-    inLSTM3 = inLSTM3.view(-1)
-    inLSTM3 = inLSTM3.unsqueeze(0).expand(seqLength, 1, inLSTM3.size(0))
+    An intuitive way of reasoning about thi sis that we use the network and lstms to
+    compute the location of possible features in the image.
 
-    inLSTM4 = torch.mul(lt[3], feat_cube[3])
-    inLSTM4 = inLSTM4.view(-1)
-    inLSTM4 = inLSTM4.unsqueeze(0).expand(seqLength, 1, inLSTM4.size(0))
+    We then show the soft-max embedded features the input bounding boxes and compute the
+    intersection over unions
+    """
+    regress_length = 5
+    inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(-1)  #will have 2048 connections
+    # inLSTM1 = inLSTM1.view(-1)
+    inLSTM1 = inLSTM1.unsqueeze(0).expand(regress_length, 1, inLSTM1.size(0))
 
-    inLSTM5 = torch.mul(lt[4], feat_cube[4])
-    inLSTM5 = inLSTM5.view(-1)
-    inLSTM5 = inLSTM5.unsqueeze(0).expand(seqLength, 1, inLSTM5.size(0))
+    # print('sizeof inLSTM1: {}, sizeof inLSTM2: {} , sizeof inLSTM3: {} , sizeof inLSTM4: {} '.format(inLSTM1.size(), inLSTM2.size(), inLSTM3.size(), inLSTM4.size()))
+    regress_1 = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_1.named_parameters():
+        init.uniform(weights, 0, 1)
+    y1, l2in = regress_1(inLSTM1)
 
-    inLSTM6 = torch.mul(lt[5], feat_cube[5])
-    inLSTM6 = inLSTM6.view(-1)
-    inLSTM6 = inLSTM6.unsqueeze(0).expand(seqLength, 1, inLSTM6.size(0))
+    inLSTM2 = torch.mul(l2in[0], feat_cube[1].view(1, 1, -1))
+    regress_2 = RecurrentModel(inputSize=inLSTM2.size(2), nHidden=[inLSTM2.size(2),1024, 64*32], noutputs=64*32,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_2.named_parameters():
+        init.uniform(weights, 0, 1)
+    y2, l3in = regress_2(inLSTM2)
 
-    inLSTM7 = torch.mul(lt[6], feat_cube[6])
-    inLSTM7 = inLSTM7.view(-1)
-    inLSTM7 = inLSTM7.unsqueeze(0).expand(seqLength, 1, inLSTM7.size(0))
+    inLSTM3 = torch.mul(l3in[0], feat_cube[2].view(1, 1, -1))
+    regress_3 = RecurrentModel(inputSize=inLSTM3.size(2), nHidden=[inLSTM3.size(2), (inLSTM3.size(2))/4, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_3.named_parameters():
+        init.uniform(weights, 0, 1)
+    y3, l4in = regress_3(inLSTM3)
+
+    inLSTM4 = torch.mul(l4in[0], feat_cube[3].view(1, 1, -1))
+    regress_4 = RecurrentModel(inputSize=inLSTM4.size(2), nHidden=[inLSTM4.size(2), (inLSTM4.size(2))/4, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_4.named_parameters():
+        init.uniform(weights, 0, 1)
+    y4, l5in = regress_4(inLSTM4)
+
+    inLSTM5 = torch.mul(l5in[0], feat_cube[4].view(1, 1, -1))
+    regress_5 = RecurrentModel(inputSize=inLSTM5.size(2), nHidden=[inLSTM5.size(2), (inLSTM5.size(2))/4, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_5.named_parameters():
+        init.uniform(weights, 0, 1)
+    y5, l6in = regress_5(inLSTM5)
 
 
-    # print('inLSTM1.size(0): ', inLSTM1.size(2))
-    regress_1 = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),2048,512], noutputs=256,\
-                          batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
-    y1, l2_input = regress_1(inLSTM1)
+    inLSTM6 = torch.mul(l6in[0], feat_cube[5].view(1, 1, -1))
+    regress_6 = RecurrentModel(inputSize=inLSTM6.size(2), nHidden=[inLSTM6.size(2), (inLSTM6.size(2))/4, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_6.named_parameters():
+        init.uniform(weights, 0, 1)
+    y6, l7in = regress_6(inLSTM6)
 
-    print('y1.size(), l2_input.size()', y1.size(), l2_input.size())
+    inLSTM7 = torch.mul(l7in[0], feat_cube[6].view(1, 1, -1))
+    regress_7 = RecurrentModel(inputSize=inLSTM7.size(2), nHidden=[inLSTM7.size(2), (inLSTM7.size(2))/4, 64*64], noutputs=64*64,\
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    #use normal initialization for regression layer
+    for name, weights in regress_7.named_parameters():
+        init.uniform(weights, 0, 1)
+    y7, l8in = regress_7(inLSTM7)
 
-    # time.sleep(50)
+    if args.verbose:
+        print('\nl2in: {}, feat_cube[1]: {}, y1: {}'.format(l2in[0].size(), feat_cube[1].view(1, 1, -1).size(), y1[0].size()))
+        print('\nl3in: {}, feat_cube[2]: {}, y2: {}'.format(l3in[0].size(), feat_cube[2].view(1, 1, -1).size(), y2[0].size()))
+        print('\nl4in: {}, feat_cube[3]: {}, y3: {}'.format(l4in[0].size(), feat_cube[3].view(1, 1, -1).size(), y3[0].size()))
+        print('\nl5in: {}, feat_cube[4]: {}, y4: {}'.format(l5in[0].size(), feat_cube[4].view(1, 1, -1).size(), y4[0].size()))
+        print('\nl6in: {}, feat_cube[5]: {}, y5: {}'.format(l6in[0].size(), feat_cube[5].view(1, 1, -1).size(), y5[0].size()))
+        print('\nl7in: {}, feat_cube[6]: {}, y6: {}'.format(l7in[0].size(), feat_cube[6].view(1, 1, -1).size(), y6[0].size()))
+        print('\nl8in: {}, feat_cube[6]: {}, y7: {}'.format(l8in[0].size(), feat_cube[6].view(1, 1, -1).size(), y7[0].size()))
+
+    #gather all annotation vectors as input to the bounding box regressive layer
+    print('y1: {}, y2: {}, y3: {}, y4: {}, y5: {}, y6: {}'.format(y1.size(), y2.size(), y3.size(), y4.size(), y5.size(), y6.size()))
+    zt_vec = [y1, y2, y3, y4, y5, y6, y7]
+
+    time.sleep(50)
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
@@ -353,13 +403,13 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     rtest_X = torch.unsqueeze(regress_input[X_tr:], 0).expand(seqLength, 1, X_te+1)
     # Get regressor model and predict bounding boxes
     regressor = StackRegressive(inputSize=128, nHidden=[64,32,12], noutputs=12,\
-                          batchSize=args.cbatchSize, cuda=args.cuda, numLayers=2)
+                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=2)
 
     targ_X = None
     for _, targ_X in bbox_loader:
         targ_X = targ_X
 
-    if(args.cuda):
+    if(args.ship2gpu):
         rtrain_X = rtrain_X.cuda()
         rtest_X  = rtest_X.cuda()
         targ_X = targ_X.cuda()
@@ -372,7 +422,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     for epoch in range(maxIter): #run through the images maxIter times
         for i, (train_X, train_Y) in enumerate(train_loader):
 
-            if(args.cuda):
+            if(args.ship2gpu):
                 train_X = train_X.cuda()
                 train_Y = train_Y.cuda()
                 resnet  = resnet.cuda()
@@ -380,9 +430,9 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             images = Variable(train_X)
             labels = Variable(train_Y)
             #rnn input
-            rtargets = Variable(targ_X[:,i:i+seqLength,:])
+            rtargets = targ_X[:,i:i+seqLength,:]
             #reshape targets for inputs
-            rtargets = rtargets.view(seqLength, -1)
+            rtargets = Variable(rtargets.view(seqLength, -1))
 
             # Forward + Backward + Optimize
             clsfx_optimizer.zero_grad()
@@ -420,10 +470,10 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
 def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
     correct, total = 0, 0
 
-    rtest_X = rtest_X.cuda() if args.cuda else rtest_X
+    rtest_X = rtest_X.cuda() if args.ship2gpu else rtest_X
     for test_X, test_Y in test_loader:
 
-        test_X = test_X.cuda() if args.cuda else test_X
+        test_X = test_X.cuda() if args.ship2gpu else test_X
         images = Variable(test_X)
         labels = test_Y
 

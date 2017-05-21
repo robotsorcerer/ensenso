@@ -108,7 +108,7 @@ class StackRegressive(nn.Module):
         self.hidden_size    = kwargs['nHidden']
         self.batch_size     = kwargs['batchSize']
         self.noutputs       = kwargs['noutputs']
-        self.cuda           = kwargs['cuda']
+        self.ship2gpu       = kwargs['ship2gpu']
 
         self.criterion = nn.MSELoss(size_average=False)
         self.fc = nn.Linear(32, self.noutputs)
@@ -124,7 +124,7 @@ class StackRegressive(nn.Module):
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
 
-        if self.cuda:
+        if self.ship2gpu:
             self.lstm1 = self.lstm1.cuda()
             self.lstm2 = self.lstm2.cuda()
             self.fc    = self.fc.cuda()
@@ -141,6 +141,8 @@ class StackRegressive(nn.Module):
         # Decode hidden state of last time step
         out = self.fc(out[:, -1, :])
 
+        # print('out size: ', out.size())
+
         out = out.view(nBatch, -1)
 
         return out, state_1
@@ -154,6 +156,9 @@ class RecurrentModel(nn.Module):
         Retrieved from https://arxiv.org/pdf/1511.04119.pdf
         '''
 
+        if torch.cuda.is_available():
+            self.cuda()
+
         self.criterion = nn.MSELoss(size_average=False)
         # Backprop Through Time (Recurrent Layer) Params
         self.noutputs       = kwargs['noutputs']
@@ -162,21 +167,14 @@ class RecurrentModel(nn.Module):
         self.hidden_size    = kwargs['nHidden']
         self.batch_size     = kwargs['batchSize']
         self.noutputs       = kwargs['noutputs']
-        self.cuda           = kwargs['cuda']
+        self.ship2gpu       = kwargs['ship2gpu']
 
         #define the recurrent connections
         self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.lstm3 = nn.LSTM(self.hidden_size[1], self.hidden_size[2], self.num_layers, bias=False, batch_first=False, dropout=0.3)
 
-        if self.cuda:
-            self.lstm1 = self.lstm1.cuda()
-            self.lstm2 = self.lstm2.cuda()
-            self.lstm3 = self.lstm3.cuda()
-
     def forward(self, x):
-        nBatch = x.size(2)
-        print('nBatch: ', nBatch)
 
         # Forward propagate RNN layer 1
         out, state_0 = self.lstm1(x)
@@ -188,9 +186,11 @@ class RecurrentModel(nn.Module):
         # # Forward propagate RNN layer 3
         out, state_2 = self.lstm3(out)
 
+        #at this point, out will be seqLength x batchSize x PooledSize
         # Decode hidden state of last time step
-        out = out[:, -1, :]
+        # out = out[-1:, :,]
 
-        out = out.view(nBatch, -1)
+        # out = out.view(-1)
+        # out will be seqLength x PooledSize
 
-        return out, state_1
+        return out, state_2

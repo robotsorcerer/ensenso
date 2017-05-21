@@ -111,7 +111,7 @@ def click_and_crop(event, x, y, flags, param):
 
 def main():
     cwd = os.getcwd()
-    images_path = cwd + "/" + "../" + "manikin/raw/face_images"
+    images_path = cwd + "/" + "../" + "manikin/raw/face_pos"
 
     file_names, images_list = loadAllImages(images_path)
     global file_name, file_image, rect, detect_mode
