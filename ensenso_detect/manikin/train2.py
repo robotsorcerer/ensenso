@@ -258,6 +258,9 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     #   for param in resnet.parameters():
     #       param.requires_grad = False
 
+    print(resnet)
+
+    time.sleep(50)
     # #extract last convolution layer
     last_layer, feat_cube = resnet.layer3, []
     for param in last_layer.parameters():
@@ -282,10 +285,9 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     m = nn.MaxPool2d(kernel, stride)
     feat_cube[0] = m(feat_cube[0]) #will now be 64 x 32 x 1 x 1
     feat_cube[2] = m(feat_cube[2]) #will now be 64 x 32 x 1 x 1
-    feat_cube[1] = m(feat_cube[1])
+    feat_cube[1] = m(feat_cube[1]) #will now be 64 x 64 x 1 x 1
     for x in xrange(3, 7):
-        feat_cube[x] = m(feat_cube[x])
-    # print(feat_cube)
+        feat_cube[x] = m(feat_cube[x])  #will now be 64 x 64 x 1 x 1
 
     lt = []  # this contains the soft max attention for each pooled layer
     for x in xrange(len(feat_cube)):
@@ -293,8 +295,8 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
         lt.append(temp)
 
     """
-    This section is a varioant of this paper:
-    Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
+    This section is a variant of this paper:
+    Sharma, S., Kiros, R., & Salakhutdinov, R.
     ACTION RECOGNITION USING VISUAL ATTENTION. Retrieved from
     https://arxiv.org/pdf/1511.04119.pdf
 
