@@ -42,7 +42,7 @@ from model import ResNet, ResidualBlock, \
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--ship2gpu', action='store_true', default=False, help="use cuda or not?")
+parser.add_argument('--ship2gpu', action='store_true', default=True, help="use cuda or not?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -152,10 +152,10 @@ class LoadAndParse(object):
 
         faces_top, faces_bot = [], []
         #arrange faces_bbox into a 1x8 array
+        # we only extract the top left and bot right
         for i in range(len(self.faces_bbox)):
-            faces_top.append(self.faces_bbox[i][0])
-            faces_bot.append(self.faces_bbox[i][1])
-
+            faces_top.append(self.faces_bbox[i][0][0:2]) #top left
+            faces_bot.append(self.faces_bbox[i][1][2:4]) #bot right
         """
         First 4 cols represent top coordinates of face boxes,
         Followed by lower coordinates of face_boxes
@@ -236,6 +236,36 @@ class LoadAndParse(object):
 
         return train_loader, test_loader, bbox_loader
 
+
+
+# some utilities
+def ortho_weight(ndim):
+    """
+    Random orthogonal weights
+    Used by norm_weights(below), in which case, we
+    are ensuring that the rows are orthogonal
+    (i.e W = U \Sigma V, U has the same
+    # of rows, V has the same # of cols)
+    """
+    W = torch.randn(ndim, ndim)
+    u, _, _ = torch.svd(W)
+    return u
+
+def norm_weight(nin,nout=None, scale=0.01, ortho=True):
+    """
+    Random weights drawn from a Gaussian
+    """
+    if nout is None:
+        nout = nin
+    if nout == nin and ortho:
+        W = ortho_weight(nin)
+    else:
+        W = scale * torch.randn(nin, nout)
+    return W
+
+def pprint(x):
+    print(str(x) + ' : ', x)
+
 def trainClassifierRegressor(train_loader, bbox_loader, args):
     #cnn hyperparameters
     clr = args.clr
@@ -248,15 +278,6 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     inputSize, nHidden = 128, [64, 32]
 
     resnet = ResNet(ResidualBlock, [3, 3, 3])
-
-    # #extract feture cube of last layer and reshape it
-    # feature_cube = None
-    # if args.classifier:    #use pre-trained classifier
-    #   resnet.load_state_dict(torch.load('models_new/' + args.classifier))
-    #   print('using pretrained model')
-    # #   #freeze optimized layers
-    #   for param in resnet.parameters():
-    #       param.requires_grad = False
 
     # #extract last convolution layer
     last_layer, feat_cube = resnet.layer3, []
@@ -293,106 +314,93 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
         lt.append(temp)
 
     """
-    This section is a varioant of this paper:
+    This section is a variant of this paper:
     Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
     ACTION RECOGNITION USING VISUAL ATTENTION. Retrieved from
     https://arxiv.org/pdf/1511.04119.pdf
 
-    An intuitive way of reasoning about thi sis that we use the network and lstms to
+    An intuitive way of reasoning about this is that we use the network and lstms to
     compute the location of possible features in the image.
 
     We then show the soft-max embedded features the input bounding boxes and compute the
     intersection over unions
     """
     regress_length = 5
-    inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(-1)  #will have 2048 connections
-    # inLSTM1 = inLSTM1.view(-1)
-    inLSTM1 = inLSTM1.unsqueeze(0).expand(regress_length, 1, inLSTM1.size(0))
 
-    # print('sizeof inLSTM1: {}, sizeof inLSTM2: {} , sizeof inLSTM3: {} , sizeof inLSTM4: {} '.format(inLSTM1.size(), inLSTM2.size(), inLSTM3.size(), inLSTM4.size()))
-    regress_1 = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
+    inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(1,1,-1)  #will have 2048 connections
+    # inLSTM1 = inLSTM1.unsqueeze(0).expand(regress_length, 1, inLSTM1.size(0))
+    regress = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*32],\
+                             noutputs=64*32,batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
+                             numLayers=1)
     #use normal initialization for regression layer
-    for name, weights in regress_1.named_parameters():
+    for name, weights in regress.named_parameters():
         init.uniform(weights, 0, 1)
-    y1, l2in = regress_1(inLSTM1)
-
-    inLSTM2 = torch.mul(l2in[0], feat_cube[1].view(1, 1, -1))
-    regress_2 = RecurrentModel(inputSize=inLSTM2.size(2), nHidden=[inLSTM2.size(2),1024, 64*32], noutputs=64*32,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_2.named_parameters():
-        init.uniform(weights, 0, 1)
-    y2, l3in = regress_2(inLSTM2)
+    y1, l3in = regress(inLSTM1)
 
     inLSTM3 = torch.mul(l3in[0], feat_cube[2].view(1, 1, -1))
-    regress_3 = RecurrentModel(inputSize=inLSTM3.size(2), nHidden=[inLSTM3.size(2), (inLSTM3.size(2))/4, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_3.named_parameters():
+    #reshape last lstm layer
+    regress.lstm3 = nn.LSTM(1024, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
+    for name, weights in regress.lstm3.named_parameters():
         init.uniform(weights, 0, 1)
-    y3, l4in = regress_3(inLSTM3)
+    y3, l2in = regress(inLSTM3)
 
+    inLSTM2 = torch.mul(l2in[0], feat_cube[1].view(1, 1, -1))
+    # Fix layers 1, 3, 4, 5, 6, 7  | layers 0 and 2 have unique shapes
+    regress.lstm1 = nn.LSTM(64*64, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
+    regress.lstm2 = nn.LSTM(64*64, 64*16, 1, bias=False, batch_first=False, dropout=0.3)
+    regress.lstm3 = nn.LSTM(64*16, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
+    for name, weights in regress.named_parameters():
+        init.uniform(weights, 0, 1)
+    y2, l4in = regress(inLSTM2)
     inLSTM4 = torch.mul(l4in[0], feat_cube[3].view(1, 1, -1))
-    regress_4 = RecurrentModel(inputSize=inLSTM4.size(2), nHidden=[inLSTM4.size(2), (inLSTM4.size(2))/4, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_4.named_parameters():
-        init.uniform(weights, 0, 1)
-    y4, l5in = regress_4(inLSTM4)
-
+    y4, l5in = regress(inLSTM4)
     inLSTM5 = torch.mul(l5in[0], feat_cube[4].view(1, 1, -1))
-    regress_5 = RecurrentModel(inputSize=inLSTM5.size(2), nHidden=[inLSTM5.size(2), (inLSTM5.size(2))/4, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_5.named_parameters():
-        init.uniform(weights, 0, 1)
-    y5, l6in = regress_5(inLSTM5)
-
-
+    y5, l6in = regress(inLSTM5)
     inLSTM6 = torch.mul(l6in[0], feat_cube[5].view(1, 1, -1))
-    regress_6 = RecurrentModel(inputSize=inLSTM6.size(2), nHidden=[inLSTM6.size(2), (inLSTM6.size(2))/4, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_6.named_parameters():
-        init.uniform(weights, 0, 1)
-    y6, l7in = regress_6(inLSTM6)
-
+    y6, l7in = regress(inLSTM6)
     inLSTM7 = torch.mul(l7in[0], feat_cube[6].view(1, 1, -1))
-    regress_7 = RecurrentModel(inputSize=inLSTM7.size(2), nHidden=[inLSTM7.size(2), (inLSTM7.size(2))/4, 64*64], noutputs=64*64,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    #use normal initialization for regression layer
-    for name, weights in regress_7.named_parameters():
-        init.uniform(weights, 0, 1)
-    y7, l8in = regress_7(inLSTM7)
+    y7, l8in = regress(inLSTM7)
 
-    if args.verbose:
-        print('\nl2in: {}, feat_cube[1]: {}, y1: {}'.format(l2in[0].size(), feat_cube[1].view(1, 1, -1).size(), y1[0].size()))
-        print('\nl3in: {}, feat_cube[2]: {}, y2: {}'.format(l3in[0].size(), feat_cube[2].view(1, 1, -1).size(), y2[0].size()))
-        print('\nl4in: {}, feat_cube[3]: {}, y3: {}'.format(l4in[0].size(), feat_cube[3].view(1, 1, -1).size(), y3[0].size()))
-        print('\nl5in: {}, feat_cube[4]: {}, y4: {}'.format(l5in[0].size(), feat_cube[4].view(1, 1, -1).size(), y4[0].size()))
-        print('\nl6in: {}, feat_cube[5]: {}, y5: {}'.format(l6in[0].size(), feat_cube[5].view(1, 1, -1).size(), y5[0].size()))
-        print('\nl7in: {}, feat_cube[6]: {}, y6: {}'.format(l7in[0].size(), feat_cube[6].view(1, 1, -1).size(), y6[0].size()))
-        print('\nl8in: {}, feat_cube[6]: {}, y7: {}'.format(l8in[0].size(), feat_cube[6].view(1, 1, -1).size(), y7[0].size()))
-
-    #gather all annotation vectors as input to the bounding box regressive layer
-    print('y1: {}, y2: {}, y3: {}, y4: {}, y5: {}, y6: {}'.format(y1.size(), y2.size(), y3.size(), y4.size(), y5.size(), y6.size()))
+    #zt_vec \in R^D captures the visual info of associated with particular input locations
     zt_vec = [y1, y2, y3, y4, y5, y6, y7]
 
-    time.sleep(50)
+    # concatenate the attention variables
+    attn_2 = torch.stack((zt_vec[1], zt_vec[2], zt_vec[3], zt_vec[4],\
+                        zt_vec[5], zt_vec[6]), 0)
+    attn_2 = attn_2.view(-1, attn_2.size(-1))
+    attn_1 = zt_vec[0]
+
+    print(attn_2.size())
+    # #this function emulates matlab's find functional
+    # def find(a, func):
+    #     return [i for (i, val) in enumerate(a) if func(val)]
+    #
+    # def sampler(p):
+    #     # draws a sample from a discrete pdf
+    #     # form cdf
+    #     c = torch.zeros(len(p),1);
+    #
+    #     for i=1:len(p)
+    #         c[i] = torch.mm(torch.ones(1,i), p(1:i).t());
+    #     end
+    #
+    #     rand = torch.randn(1)[0]
+    #     z = find(c, lambda rand: rand <= c)
+    #     z = find(rand <= c, 1);
+    """
+    at run time we are going to draw samples from a multinomial
+    probability distribution
+    """
+    regress_input = torch.multinomial(attn_2.t(), 1)
+
+    print('regress_input: ', regress_input)
+
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
     clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
 
-    last_layer, feat_cube = resnet.fc, []
-    #accummulate all the features of the fc layer into a list
-    for param in last_layer.parameters():
-        feat_cube.append(param)  #will contain weights and biases
-    regress_input, params_bias = feat_cube[0], feat_cube[1]
-
-    #reshape regress_input
-    regress_input = regress_input.view(-1)
+    time.sleep(50)
 
     X_tr = int(0.8*len(regress_input))
     X_te = int(0.2*len(regress_input))
@@ -402,7 +410,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     rtrain_X = torch.unsqueeze(regress_input, 0).expand(seqLength, 1, X)
     rtest_X = torch.unsqueeze(regress_input[X_tr:], 0).expand(seqLength, 1, X_te+1)
     # Get regressor model and predict bounding boxes
-    regressor = StackRegressive(inputSize=128, nHidden=[64,32,12], noutputs=12,\
+    regressor = StackRegressive(inputSize=128, nHidden=[64,32,8], noutputs=8,\
                           batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=2)
 
     targ_X = None
