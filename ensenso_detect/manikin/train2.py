@@ -31,7 +31,7 @@ import numpy as np
 import numpy.random as npr
 from random import shuffle
 
-import sys
+import sys, traceback
 # from IPython.core import ultratb
 # sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 #      color_scheme='Linux', call_pdb=1)
@@ -43,6 +43,7 @@ from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
 parser.add_argument('--ship2gpu', action='store_true', default=True, help="use cuda or not?")
+parser.add_argument('--multinomial', action='store_true', default=False, help="sample from feature cube?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -273,7 +274,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     maxIter = args.cmaxIter
 
     #rnn hyperparameters
-    numLayers, seqLength = 2, 5
+    numLayers, regressLength = 2, 5
     noutputs, rlr = 12, args.rnnLR
     inputSize, nHidden = 128, [64, 32]
 
@@ -285,17 +286,6 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
         if param.dim() > 1:  # extract only conv cubes
             feat_cube.append(param)
 
-    '''
-    feat cube contains the feature maps of the last convolution layer. of shape
-    64L, 32L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 32L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
-    '''
-
     #max pool the last conv layer
     #define kernel size and width for pooled features
     kernel, stride = 3, 2
@@ -306,7 +296,6 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     feat_cube[1] = m(feat_cube[1])
     for x in xrange(3, 7):
         feat_cube[x] = m(feat_cube[x])
-    # print(feat_cube)
 
     lt = []  # this contains the soft max attention for each pooled layer
     for x in xrange(len(feat_cube)):
@@ -325,23 +314,39 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     We then show the soft-max embedded features the input bounding boxes and compute the
     intersection over unions
     """
-    regress_length = 5
 
     inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(1,1,-1)  #will have 2048 connections
-    # inLSTM1 = inLSTM1.unsqueeze(0).expand(regress_length, 1, inLSTM1.size(0))
     regress = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*32],\
                              noutputs=64*32,batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
                              numLayers=1)
     #use normal initialization for regression layer
-    for name, weights in regress.named_parameters():
-        init.uniform(weights, 0, 1)
+    params = list(regress.parameters())
+    for i in range(len(params)):
+        init.uniform(params[i], 0, 1)
+
     y1, l3in = regress(inLSTM1)
+
+    '''
+    feat cube contains the feature maps of the last convolution layer. of shape
+    64L, 32L, 3L, 3L
+    64L, 64L, 3L, 3L
+    64L, 32L, 3L, 3L
+    64L, 64L, 3L, 3L
+    64L, 64L, 3L, 3L
+    64L, 64L, 3L, 3L
+    64L, 64L, 3L, 3L
+    '''
 
     inLSTM3 = torch.mul(l3in[0], feat_cube[2].view(1, 1, -1))
     #reshape last lstm layer
+    # regress = regress
     regress.lstm3 = nn.LSTM(1024, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
-    for name, weights in regress.lstm3.named_parameters():
-        init.uniform(weights, 0, 1)
+    # for m in regress.modules():
+    #     for t in m.state_dict().values():
+    #         init.uniform(t, 0, 1)
+    param3 = list(regress.parameters())
+    # for i in range(len(param3)):
+    #     init.uniform(param3[i], 0, 1)
     y3, l2in = regress(inLSTM3)
 
     inLSTM2 = torch.mul(l2in[0], feat_cube[1].view(1, 1, -1))
@@ -349,8 +354,15 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     regress.lstm1 = nn.LSTM(64*64, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
     regress.lstm2 = nn.LSTM(64*64, 64*16, 1, bias=False, batch_first=False, dropout=0.3)
     regress.lstm3 = nn.LSTM(64*16, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
-    for name, weights in regress.named_parameters():
-        init.uniform(weights, 0, 1)
+    #use normal initialization for regression layer
+    # for m in regress.modules():
+    #     if(isinstance(m, nn.LSTM)):
+    #         mvals = m.state_dict().values()
+    #         init.uniform(mvals[0], 0, 1)
+    #         init.uniform(mvals[1], 0, 1)
+    params_n = list(regress.parameters())
+    # for i in range(len(params_n)):
+    #     init.uniform(params_n[i], 0, 1)
     y2, l4in = regress(inLSTM2)
     inLSTM4 = torch.mul(l4in[0], feat_cube[3].view(1, 1, -1))
     y4, l5in = regress(inLSTM4)
@@ -361,7 +373,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     inLSTM7 = torch.mul(l7in[0], feat_cube[6].view(1, 1, -1))
     y7, l8in = regress(inLSTM7)
 
-    #zt_vec \in R^D captures the visual info of associated with particular input locations
+    #zt_vec \in R^D captures the visual info associated with particular input locations
     zt_vec = [y1, y2, y3, y4, y5, y6, y7]
 
     # concatenate the attention variables
@@ -370,58 +382,47 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     attn_2 = attn_2.view(-1, attn_2.size(-1))
     attn_1 = zt_vec[0]
 
-    print(attn_2.size())
-    # #this function emulates matlab's find functional
-    # def find(a, func):
-    #     return [i for (i, val) in enumerate(a) if func(val)]
-    #
-    # def sampler(p):
-    #     # draws a sample from a discrete pdf
-    #     # form cdf
-    #     c = torch.zeros(len(p),1);
-    #
-    #     for i=1:len(p)
-    #         c[i] = torch.mm(torch.ones(1,i), p(1:i).t());
-    #     end
-    #
-    #     rand = torch.randn(1)[0]
-    #     z = find(c, lambda rand: rand <= c)
-    #     z = find(rand <= c, 1);
     """
     at run time we are going to draw samples from a multinomial
     probability distribution
+
+    # regress_input will be a 1 x 4096 Tensor
     """
-    regress_input = torch.multinomial(attn_2.t(), 1)
 
-    print('regress_input: ', regress_input)
-
+    # print(regress_input.size(), attn_2.size())
+    if args.multinomial:
+        regress_input = torch.multinomial(attn_2.t(), 1, True).double()
+    else:
+        sample_idx = np.random.randint(0, 7)
+        regress_input = attn_2[sample_idx].unsqueeze(0).t()
+        print('regress input: ', regress_input.size())
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
     clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
-
-    time.sleep(50)
 
     X_tr = int(0.8*len(regress_input))
     X_te = int(0.2*len(regress_input))
     X = len(regress_input)
 
     #reshape inputs
-    rtrain_X = torch.unsqueeze(regress_input, 0).expand(seqLength, 1, X)
-    rtest_X = torch.unsqueeze(regress_input[X_tr:], 0).expand(seqLength, 1, X_te+1)
+    rtrain_X = regress_input[:X_tr].t().expand(regressLength, X_tr)
+    rtest_X = regress_input[X_tr:].t().expand(regressLength, X_te+1)
+
+    print('rTrain_X size: ', rtrain_X.size())
+    print('regress_input\': {}, rTest: {} '.format(regress_input[X_tr:].t().size(), rtest_X.size()))
     # Get regressor model and predict bounding boxes
-    regressor = StackRegressive(inputSize=128, nHidden=[64,32,8], noutputs=8,\
-                          batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=2)
+    regressor = StackRegressive(inputSize=rtrain_X.size(1), nHidden=[rtrain_X.size(1),rtrain_X.size(1)/4, 8], noutputs=8, batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
 
     targ_X = None
     for _, targ_X in bbox_loader:
         targ_X = targ_X
 
+    # time.sleep(50)
     if(args.ship2gpu):
         rtrain_X = rtrain_X.cuda()
         rtest_X  = rtest_X.cuda()
         targ_X = targ_X.cuda()
-        # regressor = regressor.cuda()
 
     #define optimizer
     rnn_optimizer = optim.SGD(regressor.parameters(), rlr)
@@ -438,9 +439,9 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             images = Variable(train_X)
             labels = Variable(train_Y)
             #rnn input
-            rtargets = targ_X[:,i:i+seqLength,:]
+            rtargets = targ_X[:,i:i+regressLength,:]
             #reshape targets for inputs
-            rtargets = Variable(rtargets.view(seqLength, -1))
+            rtargets = Variable(rtargets.view(regressLength, -1))
 
             # Forward + Backward + Optimize
             clsfx_optimizer.zero_grad()
@@ -506,11 +507,18 @@ def main(args):
     train_loader, test_loader, bbox_loader = lnp.partitionData()
 
     # train  conv+rnn nets
-    net, reg, rtest_X = \
-                trainClassifierRegressor(train_loader, bbox_loader, args)
+    try:
+        net, reg, rtest_X = \
+                    trainClassifierRegressor(train_loader, bbox_loader, args)
+        
+        # test conv+rnn nets
+        testClassifierRegressor(test_loader, net, reg, rtest_X, args)
+    except:
+        print("stack overflow. please check the contents of the \'out.log\'' file")
+        with open('out.log', 'w') as f:
+            traceback.extract_stack()
+            traceback.print_stack(file=f)
 
-    # test conv+rnn nets
-    testClassifierRegressor(test_loader, net, reg, rtest_X, args)
 
 if __name__=='__main__':
     main(args)
