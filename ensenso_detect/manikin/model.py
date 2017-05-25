@@ -124,10 +124,8 @@ class StackRegressive(nn.Module):
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
 
-        if self.ship2gpu:
-            self.lstm1 = self.lstm1.cuda()
-            self.lstm2 = self.lstm2.cuda()
-            self.fc    = self.fc.cuda()
+        if self.ship2gpu and torch.cuda.is_available():
+            self.lstm1 = self.cuda()
 
     def forward(self, x):
         nBatch = x.size(0)
@@ -151,7 +149,7 @@ class RecurrentModel(nn.Module):
     def __init__(self, **kwargs):
         super(RecurrentModel, self).__init__()
         '''
-        See Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
+        See Sharma, S., Kiros, R., & Salakhutdinov, R.
         Workshop track -ICLR 2016 ACTION RECOGNITION USING VISUAL ATTENTION.
         Retrieved from https://arxiv.org/pdf/1511.04119.pdf
         '''
