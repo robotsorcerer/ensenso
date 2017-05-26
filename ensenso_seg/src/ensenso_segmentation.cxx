@@ -20,14 +20,20 @@
 #include <pcl/surface/convex_hull.h>
 #include <pcl/surface/concave_hull.h>
 #include <pcl/filters/extract_indices.h>
-#include <pcl/segmentation/extract_polygonal_prism_data.h>
+
+#include <pcl/point_types.h>
+#include <pcl/registration/icp.h>
+#include <pcl/registration/transformation_estimation_2D.h>
+
 
 /*Computer Descriptors*/
-#include <pcl/common/centroid.h>
+#include <pcl/console/time.h>   // TicToc
 #include <pcl/console/parse.h>
+#include <pcl/common/centroid.h>
 
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/segmentation/extract_polygonal_prism_data.h>
 
 class objectPoseEstim; //class forward declaration
 class sender; //class forward declaration of boost broadcaster
@@ -36,7 +42,8 @@ class Segmentation
 {
 private:	
 	friend class objectPoseEstim; //friend class forward declaration
-	bool updateCloud, save, running, print, savepcd, send, firstFace;
+	bool updateCloud, save, running, print, savepcd, send, \
+		firstFace, next_iteration;
 	ros::NodeHandle nh_;
 	std::ostringstream oss;
  	const std::string cloudName;
@@ -52,6 +59,7 @@ private:
 	float distThreshold; //distance at which to apply the threshold
 	float zmin, zmax;	//minimum and maximum distance to extrude the prism object
 	int v1, v2, v3, v4;
+	int iterations; //# of icp iterations
  	ros::AsyncSpinner spinner;
  	/*Filtered Cloud and backgrounds*/
  	PointCloudTPtr filteredCloud, cloud_background, firstCloud,
@@ -65,7 +73,7 @@ private:
 	//Get Plane Model
 	pcl::ModelCoefficients::Ptr coefficients;
 	//indices of segmented face
-	pcl::PointIndices::Ptr inliers, faceIndices;
+	pcl::PointIndices::Ptr inliers, faceIndices, faceIndices2;
 	// Prism object.
 	pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism, prism2;
 
@@ -84,15 +92,16 @@ private:
 	Eigen::Vector3d headOrientation;
 	ensenso::HeadPose headPose;
 
-	PointCloudTPtr facesOnly, passThruCloud, 
+	PointCloudTPtr facesOnly, facesOnly2, passThruCloud, 
 					largest_cluster, outlierRemCloud;
-	pcl::PointIndices::Ptr largestIndices;		
-
+	pcl::PointIndices::Ptr largestIndices, largestIndices2;		
+	Eigen::Matrix4d transformation_matrix;
 	double x, y, z, \
-	x_sq, y_sq, z_sq;  //used to compute spherical coordinates
+	x_sq, y_sq, z_sq, \
+	roll, pitch, yaw;  //used to compute spherical coordinates
 	
 	
-	double rad_dist, azimuth, polar, roll; //spherical coords
+	double rad_dist, azimuth, polar; //spherical coords
 
 	ros::Publisher posePublisher;
 	uint64_t counter;
@@ -101,14 +110,15 @@ private:
 						yawfilt;
 
 	boost::asio::io_service io_service;
-	const std::string multicast_address;
+	const std::string multicast_address;	
+    pcl::IterativeClosestPoint<PointT, PointT> icp;
 public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
 	send(false), cloudName("Segmentation Cloud"), savepcd(false), firstFace(true),
 	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.645), 
-	zmin(0.1f), zmax(0.3553f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
-	multicast_address("235.255.0.1")
+	zmin(0.1f), zmax(0.3553f), v1(0), v2(0), v3(0), v4(0), iterations(2),  spinner(hardware_concurrency/2), 
+	counter(0),	multicast_address("235.255.0.1")
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
 	}
@@ -139,6 +149,7 @@ public:
 		firstCloudFeatures	= PointCloudTPtr (new PointCloudT);	
 		faceFeatures		= PointCloudTPtr (new PointCloudT);
 		facesOnly			= PointCloudTPtr (new PointCloudT);
+		facesOnly2			= PointCloudTPtr (new PointCloudT);
 		passThruCloud 		= PointCloudTPtr (new PointCloudT);
 		outlierRemCloud		= PointCloudTPtr (new PointCloudT);
 		largest_cluster 	= PointCloudTPtr (new PointCloudT);
@@ -147,10 +158,11 @@ public:
 		coefficients 		= pcl::ModelCoefficients::Ptr  (new pcl::ModelCoefficients);
 		inliers 			= pcl::PointIndices::Ptr  (new pcl::PointIndices);
 		faceIndices 		= pcl::PointIndices::Ptr (new pcl::PointIndices);
+		faceIndices2 		= pcl::PointIndices::Ptr (new pcl::PointIndices);
 		largestIndices		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
+		largestIndices2 	= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
 
 		normals 			= PointCloudNPtr (new PointCloudN);	
-		// multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 
 		//descriptors
 		ourcvfh_desc 		= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
@@ -187,7 +199,7 @@ public:
 	  running = false;
 	}
 
-	void getMultiViewer(/*boost::shared_ptr<pcl::visualization::PCLVisualizer> multiViewer*/)
+	void getMultiViewer()
 	{				
 		multiViewer = boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 		multiViewer->initCameraParameters ();
@@ -223,6 +235,8 @@ public:
 	  		  break;
 	  	}
 	  }
+	  else if (event.getKeySym () == "space" && event.keyDown ())
+	    next_iteration = true;
 	}
 
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud)
@@ -398,9 +412,9 @@ public:
 
 	bool getLargestCluster(const PointCloudTPtr cloud, 
 							const pcl::PointIndices::Ptr indices, 
-							const double &tolerance = 0.052, 
-							const int &min_size = 300, 
-							const int &max_size = 2500)
+							const double &tolerance = 0.032, 
+							const int &min_size = 100, 
+							const int &max_size = 850)
 	{
 	    // Creating the KdTree object for the search method of the extraction
 	    TreeKdPtr tree (new TreeKd ());
@@ -689,11 +703,20 @@ void Segmentation::planeSeg()
 		extract.setIndices(largestIndices);
 		extract.filter(*facesOnly);
 
-		passThrough(*faces, passThruCloud, std::move("x"), 
-						std::move(0), std::move(2));
+		//perform second ec extraction to clean up noise in filtered cloud
+		// if(!getLargestCluster(facesOnly, largestIndices2, 0.032, 90, 110))
+		// 	ROS_WARN("Could not retrieve largest cluster from convex hulled cloud");
+		extract.setIndices(largestIndices2);
+		extract.filter(*facesOnly2);
+		
+		passThrough(*facesOnly, passThruCloud, std::move("x"), 
+						std::move(0), std::move(-22));
+
+		// passThrough(*passThruCloud, passThruCloud, std::move("y"), 
+		//  			std::move(0), std::move(1.5));
 
 		/*Get cvfh descriptors for faces*/
-		const PointCloudTVFH308Ptr ourcvfh_desc;
+		// const PointCloudTVFH308Ptr ourcvfh_desc;
 
 		// objectPoseEstim obj;
 		// obj.computeOURCVFH(passThruCloud, ourcvfh_desc);
@@ -710,6 +733,20 @@ void Segmentation::planeSeg()
 		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Possible faces");
 		multiViewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "Segmented Face");
 
+		// //aply iterative closest point
+	 //    time.tic ();
+	 //    icp.setMaximumIterations (iterations);
+	 //    icp.setInputSource (firstFaceCloud);
+	 //    icp.setInputTarget (passThruCloud);
+	 //    // Set the transformation epsilon (criterion 2)
+	 //    icp.setTransformationEpsilon (1e-8);
+	 //    // Set the euclidean distance difference epsilon (criterion 3)
+  //  		icp.setEuclideanFitnessEpsilon (1);
+	 //    // Perform the alignment
+	 //    icp.align (*passThruCloud);
+	    // std::cout << "Applied " << iterations << " ICP iteration(s) in " << time.toc () << " ms" << std::endl;
+
+		Eigen::Matrix4d transformation_matrix = Eigen::Matrix4d::Identity ();
 		while (running && ros::ok())
 		{
 			/*populate the cloud viewer and prepare for publishing*/
@@ -717,7 +754,6 @@ void Segmentation::planeSeg()
 			{   
 			  std::lock_guard<std::mutex> lock(mutex); 
 			  updateCloud = false;
-			  multiViewer->updatePointCloud(segCloud, "Original Cloud");
 
 			  vg.setInputCloud(segCloud);
 			  vg.filter (*filteredSegCloud);
@@ -730,25 +766,59 @@ void Segmentation::planeSeg()
 			  // Get and show all points retrieved by the hull.
 			  extract.setIndices(faceIndices);
 			  extract.filter(*faces);				  
-			  multiViewer->updatePointCloud(filteredSegCloud, "Downsampled Cloud");
 
 			  getLargestCluster(faces, largestIndices);
 			  extract.setIndices(largestIndices);
 			  extract.filter(*facesOnly);
 
-			  passThrough(*faces, passThruCloud, std::move("x"), 
+			  if(!getLargestCluster(facesOnly, largestIndices2, 0.032, 90, 400))
+			  	ROS_WARN("Could not retrieve largest cluster from convex hulled cloud");
+			  extract.setIndices(largestIndices2);
+			  extract.filter(*facesOnly2);
+
+			  passThrough(*facesOnly, passThruCloud, std::move("x"), 
 			  				std::move(0), std::move(2));
 			  // passThrough(*passThruCloud, passThruCloud, std::move("y"), 
 			  // 				std::move(0), std::move(1.5));
 
 			  headPose = getHeadPose(passThruCloud, filteredSegCloud);
 
+		  		//aply iterative closest point
+		  	    // time.tic ();
+		  	    icp.setMaximumIterations (iterations);
+		  	    icp.setInputSource (firstFaceCloud);
+		  	    icp.setInputTarget (passThruCloud);
+		  	    // Set the transformation epsilon (criterion 2)
+		  	    icp.setTransformationEpsilon (1e-8);
+		  	    // Set the euclidean distance difference epsilon (criterion 3)
+	     		icp.setEuclideanFitnessEpsilon (1);
+		  	    // Perform the alignment
+		  	    icp.align (*passThruCloud);
+		  	    // std::cout << "Applied " << iterations << " ICP iteration(s) in " << time.toc () << " ms" << std::endl;
+
+		  	    if (icp.hasConverged ())
+		  	    {
+		  	      // ROS_WARN("icp did not quite converge");
+		  	      transformation_matrix *= icp.getFinalTransformation ().cast<double>();
+		  	      
+				  Eigen::Affine3d transRotAff(transformation_matrix);
+		  	      pcl::getTranslationAndEulerAngles(transRotAff, x, y, z, roll, pitch, yaw);
+
+		  	      ROS_INFO("ICP Pose Info: [%4f, %.4f, %.4f, %4f, %.4f, %.4f]: ", headPose.x, headPose.y, headPose.z, roll, pitch, yaw);
+				  
+				  //broadcast the pose to the network
+				  if(send)
+				    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
+		  	    }
+
+			  multiViewer->updatePointCloud(segCloud, "Original Cloud");
+			  multiViewer->updatePointCloud(filteredSegCloud, "Downsampled Cloud");
 			  multiViewer->updatePointCloud(faces, "Possible faces");
 			  multiViewer->updatePointCloud(passThruCloud, "Segmented Face");
 			  
-			  //broadcast the pose to the network
-			  if(send)
-			    udp::sender s(io_service, boost::asio::ip::address::from_string(multicast_address), headPose);
+			  if(print)
+			  	ROS_INFO("# pts in faces cloud: %lu | passthru cloud: %lu | EC cloud: %lu", faces->points.size(),
+			  			 passThruCloud->points.size(), facesOnly->points.size());
 			}	 
 			if(savepcd)
 			{
