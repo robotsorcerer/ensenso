@@ -106,8 +106,8 @@ public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
 	send(false), cloudName("Segmentation Cloud"), savepcd(false), firstFace(true),
-	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.712), 
-	zmin(0.2f), zmax(0.4953f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
+	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.732), 
+	zmin(-0.2f), zmax(0.2953f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
 	multicast_address("235.255.0.1")
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
@@ -115,8 +115,7 @@ public:
 
 	~Segmentation()
 	{
-		multiViewer.reset();
-		
+
 	}
 
 	void spawn()
@@ -151,6 +150,7 @@ public:
 		largestIndices		= pcl::PointIndices::Ptr (new pcl::PointIndices);		//indices of segmented face
 
 		normals 			= PointCloudNPtr (new PointCloudN);	
+		// multiViewer 		= boost::shared_ptr<pcl::visualization::PCLVisualizer> (new pcl::visualization::PCLVisualizer ("Multiple Viewer"));
 
 		//descriptors
 		ourcvfh_desc 		= PointCloudTVFH308Ptr (new pcl::PointCloud<pcl::VFHSignature308>);
@@ -286,159 +286,6 @@ public:
 			firstFaceCloud	= headNow;
 		}
 
-		// //Algorithm params
-		// bool show_keypoints_ (false);
-		// bool show_correspondences_ (false);
-		// bool use_cloud_resolution_ (false);
-		// bool use_hough_ (true);
-		// float model_ss_ (0.01f);
-		// float scene_ss_ (0.03f);
-		// float rf_rad_ (0.015f);
-		// float descr_rad_ (0.02f);
-		// float cg_size_ (0.01f);
-		// float cg_thresh_ (5.0f);
-
-		// PointCloudTPtr model (new PointCloudT ());
-		// PointCloudTPtr model_keypoints (new PointCloudT ());
-		// PointCloudTPtr scene (new PointCloudT ());
-		// PointCloudTPtr scene_keypoints (new PointCloudT ());
-		// pcl::PointCloud<PointN>::Ptr face_normals (new pcl::PointCloud<PointN> ());
-		// pcl::PointCloud<PointN>::Ptr scene_normals (new pcl::PointCloud<PointN> ());
-		// pcl::PointCloud<DescriptorType>::Ptr face_descriptors (new pcl::PointCloud<DescriptorType> ());
-		// pcl::PointCloud<DescriptorType>::Ptr scene_descriptors (new pcl::PointCloud<DescriptorType> ());
-		  
-		// //
-		// //  Compute Normals
-		// //
-		// pcl::NormalEstimationOMP<PointT, PointN> norm_est;
-		// norm_est.setKSearch (10);
-		// norm_est.setInputCloud (headNow);
-		// norm_est.compute (*face_normals);
-
-		// norm_est.setInputCloud (firstCloud);
-		// norm_est.compute (*scene_normals);
-
-		// //
-		// //  Compute Descriptor for keypoints
-		// //
-		// pcl::SHOTEstimationOMP<PointT, PointN, DescriptorType> descr_est;
-		// descr_est.setRadiusSearch (descr_rad_);
-
-		// descr_est.setInputCloud (headNow);
-		// descr_est.setInputNormals (face_normals);
-		// descr_est.setSearchSurface (headNow);
-		// descr_est.compute (*face_descriptors);
-
-		// descr_est.setInputCloud (firstCloud);
-		// descr_est.setInputNormals (scene_normals);
-		// descr_est.setSearchSurface (firstCloud);
-		// descr_est.compute (*scene_descriptors);
-
-		// //
-		// //  Find Model-Scene Correspondences with KdTree
-		// //
-		// pcl::CorrespondencesPtr model_scene_corrs (new pcl::Correspondences ());
-
-		// pcl::KdTreeFLANN<DescriptorType> match_search;
-		// match_search.setInputCloud (face_descriptors);
-
-		// //  For each scene keypoint descriptor, find nearest neighbor into the model keypoints descriptor cloud and add it to the correspondences vector.
-		// for (size_t i = 0; i < scene_descriptors->size (); ++i)
-		// {
-		//   std::vector<int> neigh_indices (1);
-		//   std::vector<float> neigh_sqr_dists (1);
-		//   if (!pcl_isfinite (scene_descriptors->at (i).descriptor[0])) //skipping NaNs
-		//   {
-		//     continue;
-		//   }
-		//   int found_neighs = match_search.nearestKSearch (scene_descriptors->at (i), 1, neigh_indices, neigh_sqr_dists);
-		//   if(found_neighs == 1 && neigh_sqr_dists[0] < 0.25f) //  add match only if the squared descriptor distance is less than 0.25 (SHOT descriptor distances are between 0 and 1 by design)
-		//   {
-		//     pcl::Correspondence corr (neigh_indices[0], static_cast<int> (i), neigh_sqr_dists[0]);
-		//     model_scene_corrs->push_back (corr);
-		//   }
-		// }
-		// std::cout << "Correspondences found: " << model_scene_corrs->size () << std::endl;
-
-		// //
-		// //  Actual Clustering
-		// //
-		// std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f> > rototranslations;
-		// std::vector<pcl::Correspondences> clustered_corrs;
-
-		// //  Using Hough3D
-		// if (use_hough_)
-		// {
-		//   //
-		//   //  Compute (Keypoints) Reference Frames only for Hough
-		//   //
-		//   pcl::PointCloud<RFType>::Ptr model_rf (new pcl::PointCloud<RFType> ());
-		//   pcl::PointCloud<RFType>::Ptr scene_rf (new pcl::PointCloud<RFType> ());
-
-		//   pcl::BOARDLocalReferenceFrameEstimation<PointT, PointN, RFType> rf_est;
-		//   rf_est.setFindHoles (true);
-		//   rf_est.setRadiusSearch (rf_rad_);
-
-		//   rf_est.setInputCloud (headNow);
-		//   rf_est.setInputNormals (face_normals);
-		//   rf_est.setSearchSurface (headNow);
-		//   rf_est.compute (*model_rf);
-
-		//   rf_est.setInputCloud (firstCloud);
-		//   rf_est.setInputNormals (scene_normals);
-		//   rf_est.setSearchSurface (firstCloud);
-		//   rf_est.compute (*scene_rf);
-
-		//   //  Clustering
-		//   pcl::Hough3DGrouping<PointT, PointT, RFType, RFType> clusterer;
-		//   clusterer.setHoughBinSize (cg_size_);
-		//   clusterer.setHoughThreshold (cg_thresh_);
-		//   clusterer.setUseInterpolation (true);
-		//   clusterer.setUseDistanceWeight (false);
-
-		//   clusterer.setInputCloud (model_keypoints);
-		//   clusterer.setInputRf (model_rf);
-		//   clusterer.setSceneCloud (firstCloud);
-		//   clusterer.setSceneRf (scene_rf);
-		//   clusterer.setModelSceneCorrespondences (model_scene_corrs);
-
-		//   //clusterer.cluster (clustered_corrs);
-		//   clusterer.recognize (rototranslations, clustered_corrs);
-		// }
-		// else // Using GeometricConsistency
-		// {
-		//   pcl::GeometricConsistencyGrouping<PointT, PointT> gc_clusterer;
-		//   gc_clusterer.setGCSize (cg_size_);
-		//   gc_clusterer.setGCThreshold (cg_thresh_);
-
-		//   gc_clusterer.setInputCloud (model_keypoints);
-		//   gc_clusterer.setSceneCloud (firstCloud);
-		//   gc_clusterer.setModelSceneCorrespondences (model_scene_corrs);
-
-		//   //gc_clusterer.cluster (clustered_corrs);
-		//   gc_clusterer.recognize (rototranslations, clustered_corrs);
-		// }
-
-		// //
-		// //  Output results
-		// //
-		// std::cout << "Model instances found: " << rototranslations.size () << std::endl;
-		// for (size_t i = 0; i < rototranslations.size (); ++i)
-		// {
-		//   std::cout << "\n    Instance " << i + 1 << ":" << std::endl;
-		//   std::cout << "        Correspondences belonging to this instance: " << clustered_corrs[i].size () << std::endl;
-
-		//   // Print the rotation matrix and translation vector
-		//   Eigen::Matrix3f rotation = rototranslations[i].block<3,3>(0, 0);
-		//   Eigen::Vector3f translation = rototranslations[i].block<3,1>(0, 3);
-
-		//   printf ("\n");
-		//   printf ("            | %6.3f %6.3f %6.3f | \n", rotation (0,0), rotation (0,1), rotation (0,2));
-		//   printf ("        R = | %6.3f %6.3f %6.3f | \n", rotation (1,0), rotation (1,1), rotation (1,2));
-		//   printf ("            | %6.3f %6.3f %6.3f | \n", rotation (2,0), rotation (2,1), rotation (2,2));
-		//   printf ("\n");
-		//   printf ("        t = < %0.3f, %0.3f, %0.3f >\n", translation (0), translation (1), translation (2));
-		// }
 
 		//now subtract the height of camera above table from computed centroid
 		headHeight = bgdCentroid - headCentroid;
