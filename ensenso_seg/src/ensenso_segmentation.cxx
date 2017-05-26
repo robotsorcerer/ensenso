@@ -106,8 +106,8 @@ public:
 	Segmentation(bool running_, ros::NodeHandle nh, bool print)
 	: nh_(nh), updateCloud(false), save(false), print(print), running(running_), 
 	send(false), cloudName("Segmentation Cloud"), savepcd(false), firstFace(true),
-	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.732), 
-	zmin(-0.2f), zmax(0.2953f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
+	hardware_concurrency(std::thread::hardware_concurrency()), distThreshold(0.645), 
+	zmin(0.1f), zmax(0.3553f), v1(0), v2(0), v3(0), v4(0), spinner(hardware_concurrency/2), counter(0),
 	multicast_address("235.255.0.1")
 	{	
 	    cloud_sub_ = nh.subscribe("ensenso/cloud", 10, &Segmentation::cloudCallback, this); 
@@ -684,7 +684,8 @@ void Segmentation::planeSeg()
 		extract.setIndices(faceIndices);
 		extract.filter(*faces);
 
-		getLargestCluster(faces, largestIndices);
+		if(!getLargestCluster(faces, largestIndices))
+			ROS_INFO("Could not retrieve largest cluster from convex hulled cloud");
 		extract.setIndices(largestIndices);
 		extract.filter(*facesOnly);
 
@@ -739,17 +740,11 @@ void Segmentation::planeSeg()
 			  				std::move(0), std::move(2));
 			  // passThrough(*passThruCloud, passThruCloud, std::move("y"), 
 			  // 				std::move(0), std::move(1.5));
-			  // obj.computeOURCVFH(passThruCloud, ourcvfh_desc);
 
 			  headPose = getHeadPose(passThruCloud, filteredSegCloud);
 
 			  multiViewer->updatePointCloud(faces, "Possible faces");
 			  multiViewer->updatePointCloud(passThruCloud, "Segmented Face");
-
-			  if(print){
-			  ROS_INFO("orig cloud has %lu points", segCloud->points.size());
-			  ROS_INFO("downsampled face has %lu points", faces->points.size());				  	
-			  }
 			  
 			  //broadcast the pose to the network
 			  if(send)
