@@ -74,7 +74,6 @@ class ResNet(nn.Module):
         out = self.layer3(out)
         out = self.avg_pool(out)
         out = out.view(out.size(0), -1)
-        # print(out.size())
         out = self.fc(out)
         return out
 
@@ -99,8 +98,6 @@ class StackRegressive(nn.Module):
         Followed by 2 cols belonging to left eye pixel coords,
         last 2 cols are the right eye coords
         """
-
-        self.criterion = nn.MSELoss(size_average=False)
         # Backprop Through Time (Recurrent Layer) Params
         self.noutputs       = kwargs['noutputs']
         self.num_layers     = kwargs['numLayers']
@@ -109,9 +106,6 @@ class StackRegressive(nn.Module):
         self.batch_size     = kwargs['batchSize']
         self.noutputs       = kwargs['noutputs']
         self.ship2gpu       = kwargs['ship2gpu']
-
-        self.criterion = nn.MSELoss(size_average=False)
-        self.fc = nn.Linear(32, self.noutputs)
 
         """
         Now stack an LSTM on top of the convnet to generate bounding box predictions
@@ -123,9 +117,6 @@ class StackRegressive(nn.Module):
         self.lstm1 = nn.LSTM(self.input_size, self.hidden_size[0], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.lstm2 = nn.LSTM(self.hidden_size[0], self.hidden_size[1], self.num_layers, bias=False, batch_first=False, dropout=0.3)
         self.fc    = nn.Linear(self.hidden_size[1], self.noutputs)
-
-        if self.ship2gpu and torch.cuda.is_available():
-            self.lstm1 = self.cuda()
 
     def forward(self, x):
         nBatch = x.size(0)
@@ -139,11 +130,9 @@ class StackRegressive(nn.Module):
         # Decode hidden state of last time step
         out = self.fc(out[:, -1, :])
 
-        # print('out size: ', out.size())
-
         out = out.view(nBatch, -1)
 
-        return out, state_1
+        return out
 
 class RecurrentModel(nn.Module):
     def __init__(self, **kwargs):

@@ -19,6 +19,7 @@ import torchvision
 import torch.nn as nn
 import torch.nn.init as init
 import torch.optim as optim
+import torch.nn.functional as F
 import torch.utils.data as data
 import torchvision.models as models
 from torch.autograd import Variable
@@ -30,11 +31,12 @@ import cv2
 import numpy as np
 import numpy.random as npr
 from random import shuffle
+from math import floor, exp
 
 import sys, traceback
-# from IPython.core import ultratb
-# sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-#      color_scheme='Linux', call_pdb=1)
+from IPython.core import ultratb
+sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+     color_scheme='Linux', call_pdb=1)
 
 #myne utils
 from model import ResNet, ResidualBlock, \
@@ -42,8 +44,8 @@ from model import ResNet, ResidualBlock, \
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
-parser.add_argument('--ship2gpu', action='store_true', default=True, help="use cuda or not?")
-parser.add_argument('--multinomial', action='store_true', default=False, help="sample from feature cube?")
+parser.add_argument('--ship2gpu', action='store_false', default=True, help="use cuda or not?")
+parser.add_argument('--multinomial', action='store_true', default=True, help="sample from feature cube?")
 parser.add_argument('--disp', type=bool, default=False, help="populate training samples in visdom")
 parser.add_argument('--cmaxIter', type=int, default=50, help="classfier max iterations")
 parser.add_argument('--num_iter', type=int, default=5)
@@ -390,12 +392,13 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     """
 
     # print(regress_input.size(), attn_2.size())
+    sample_idx = None
     if args.multinomial:
         regress_input = torch.multinomial(attn_2.t(), 1, True).double()
     else:
-        sample_idx = np.random.randint(0, 7)
+        sample_idx = np.random.randint(0, 5)
         regress_input = attn_2[sample_idx].unsqueeze(0).t()
-        print('regress input: ', regress_input.size())
+    # print('regress input: ', regress_input)
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
@@ -406,25 +409,28 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     X = len(regress_input)
 
     #reshape inputs
-    rtrain_X = regress_input[:X_tr].t().expand(regressLength, X_tr)
-    rtest_X = regress_input[X_tr:].t().expand(regressLength, X_te+1)
+    rtrain_X = regress_input[:X_tr].t().expand(regressLength, args.cbatchSize, X_tr)
+    rtest_X = regress_input[X_tr:].t().expand(regressLength, args.cbatchSize, X_te+1)
 
-    print('rTrain_X size: ', rtrain_X.size())
-    # print('regress_input\': {}, rTest: {} '.format(regress_input[X_tr:].t().size(), rtest_X.size()))
+    # print('rTrain_X size: ', rtrain_X)
     # Get regressor model and predict bounding boxes
-    regressor = StackRegressive(inputSize=rtrain_X.size(1), nHidden=[floor(rtrain_X.size(1)/4), floor(rtrain_X.size(1)/8)],\
-                                 noutputs=8, batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, numLayers=1)
-    print("it's failing here")
+    regress_crit = nn.MSELoss()
+    regressor = StackRegressive(inputSize=rtrain_X.size(2), \
+                                nHidden=[int(rtrain_X.size(2)/40), \
+                                int(rtrain_X.size(2)/120)],noutputs=8, \
+                                batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
+                                numLayers=1)
 
-    targ_X = list(enumerate(bbox_loader))[0][0]
-    print('targ_X: ', targ_X)
+    # targ_X = list(enumerate(bbox_loader)).pop()#[0][0]
+    for k, v in enumerate(bbox_loader):
+        targ_X  = v
+    targ_X      = targ_X[0]
 
-    # time.sleep(50)
     if(args.ship2gpu):
-        rtrain_X = rtrain_X.cuda()
-        rtest_X  = rtest_X.cuda()
-        targ_X = targ_X.cuda()
-
+        rtrain_X    = rtrain_X.cuda()
+        rtest_X     = rtest_X.cuda()
+        targ_X      = targ_X.cuda()
+        regressor   = regressor.cuda()
     #define optimizer
     rnn_optimizer = optim.SGD(regressor.parameters(), rlr)
 
@@ -437,8 +443,9 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 train_Y = train_Y.cuda()
                 resnet  = resnet.cuda()
 
-            images = Variable(train_X)
-            labels = Variable(train_Y)
+            images   = Variable(train_X)
+            labels   = Variable(train_Y)
+
             #rnn input
             rtargets = targ_X[:,i:i+regressLength,:]
             #reshape targets for inputs
@@ -449,16 +456,16 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             rnn_optimizer.zero_grad()
 
             #predict classifier outs and regressor outputs
-            outputs = resnet(images)
+            outputs  = resnet(images)
             routputs = regressor(rtrain_X)
 
             #compute loss
-            loss = clsfx_crit(outputs, labels)
-            rloss    = regressor.criterion(routputs, rtargets)
+            loss     = clsfx_crit(outputs, labels)
+            rloss    = regress_crit(routputs, rtargets)
 
             #backward pass
             loss.backward()
-            rloss.backward()
+            rloss.backward(-rloss[0])
 
             # step optimizer
             clsfx_optimizer.step()
@@ -508,18 +515,16 @@ def main(args):
     train_loader, test_loader, bbox_loader = lnp.partitionData()
 
     # train  conv+rnn nets
-    try:
-        net, reg, rtest_X = \
-                    trainClassifierRegressor(train_loader, bbox_loader, args)
-        
-        # test conv+rnn nets
-        testClassifierRegressor(test_loader, net, reg, rtest_X, args)
-    except:
-        print("stack overflow. please check the contents of the \'out.log\'' file")
-        with open('out.log', 'w') as f:
-            traceback.extract_stack()
-            traceback.print_stack(file=f)
-        # pass
+    # try:
+    net, reg, rtest_X = trainClassifierRegressor(train_loader, bbox_loader, args)        
+    # test conv+rnn nets
+    testClassifierRegressor(test_loader, net, reg, rtest_X, args)
+    # except:
+    #     print("stack overflow. please check the contents of the \'out.log\'' file")
+    #     with open('out.log', 'w') as f:
+    #         traceback.extract_stack()
+    #         traceback.print_stack(file=f)
+    #     pass
 
 
 if __name__=='__main__':
