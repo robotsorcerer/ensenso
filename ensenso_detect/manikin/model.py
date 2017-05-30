@@ -52,6 +52,9 @@ class ResNet(nn.Module):
         self.avg_pool = nn.AvgPool2d(8)
         self.fc = nn.Linear(64, num_classes)
 
+        self.saved_attention = []
+        self.rewards         = []
+
     def make_layer(self, block, out_channels, blocks, stride=1):
         downsample = None
         if (stride != 1) or (self.in_channels != out_channels):

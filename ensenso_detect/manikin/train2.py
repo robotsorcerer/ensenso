@@ -239,71 +239,40 @@ class LoadAndParse(object):
 
         return train_loader, test_loader, bbox_loader
 
+resnet = ResNet(ResidualBlock, [3, 3, 3])
+regressor = StackRegressive(inputSize=3276, \
+                            nHidden=[int(3276/40), \
+                            int(3276/120)],noutputs=8, \
+                            batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
+                            numLayers=1)
 
+def rnn_stochastic_backprop(rlr):
+    #define optimizer
+    rnn_optimizer = optim.Adam(regressor.parameters(), rlr)
+    rewards = []
 
-# some utilities
-def ortho_weight(ndim):
-    """
-    Random orthogonal weights
-    Used by norm_weights(below), in which case, we
-    are ensuring that the rows are orthogonal
-    (i.e W = U \Sigma V, U has the same
-    # of rows, V has the same # of cols)
-    """
-    W = torch.randn(ndim, ndim)
-    u, _, _ = torch.svd(W)
-    return u
+    for r in resnet.saved_attention[::-1]:
+        R, gamma = 0, 0.99
+        R = r + gamma * R
+        rewards.insert(0, R)
 
-def norm_weight(nin,nout=None, scale=0.01, ortho=True):
-    """
-    Random weights drawn from a Gaussian
-    """
-    if nout is None:
-        nout = nin
-    if nout == nin and ortho:
-        W = ortho_weight(nin)
-    else:
-        W = scale * torch.randn(nin, nout)
-    return W
+    rewards = rewards[0] 
+    eps = np.finfo(np.float64).eps
+    rewards = (rewards - rewards.mean().data[0])/(rewards + rewards.std().data[0] + eps)
+    rewards = rewards.cuda() if args.ship2gpu else rewards
 
-def pprint(x):
-    print(str(x) + ' : ', x)
+    for action, r in zip(resnet.saved_attention, rewards):
+        print('action {}, r {}'.format(action, r))
+        action.reinforce(r)
 
-def trainClassifierRegressor(train_loader, bbox_loader, args):
-    #cnn hyperparameters
-    clr = args.clr
-    batchSize = args.cbatchSize
-    maxIter = args.cmaxIter
+    rnn_optimizer.zero_grad()
+    autograd.backward(resnet.saved_attention, [None for _ in resnet.saved_attention])
+    rnn_optimizer.step()
 
-    #rnn hyperparameters
-    numLayers, regressLength = 2, 5
-    noutputs, rlr = 12, args.rnnLR
-    inputSize, nHidden = 128, [64, 32]
+    del resnet.rewards[:]
+    del resnet.saved_attention[:]
 
-    resnet = ResNet(ResidualBlock, [3, 3, 3])
-
-    # #extract last convolution layer
-    last_layer, feat_cube = resnet.layer3, []
-    for param in last_layer.parameters():
-        if param.dim() > 1:  # extract only conv cubes
-            feat_cube.append(param)
-
-    #max pool the last conv layer
-    #define kernel size and width for pooled features
-    kernel, stride = 3, 2
-    #then apply a 2d max pooling of conv layer features
-    m = nn.MaxPool2d(kernel, stride)
-    feat_cube[0] = m(feat_cube[0]) #will now be 64 x 32 x 1 x 1
-    feat_cube[2] = m(feat_cube[2]) #will now be 64 x 32 x 1 x 1
-    feat_cube[1] = m(feat_cube[1])
-    for x in xrange(3, 7):
-        feat_cube[x] = m(feat_cube[x])
-
-    lt = []  # this contains the soft max attention for each pooled layer
-    for x in xrange(len(feat_cube)):
-        temp = softmax(feat_cube[x])
-        lt.append(temp)
-
+def select_regress_input(last_layer):
     """
     This section is a variant of this paper:
     Sharma, S., Kiros, R., & Salakhutdinov, R. (n.d.).
@@ -316,6 +285,27 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     We then show the soft-max embedded features the input bounding boxes and compute the
     intersection over unions
     """
+
+    # #extract last convolution layer
+    feat_cube = []
+    for param in last_layer.parameters():
+        if param.dim() > 1:  # extract only conv cubes
+            feat_cube.append(param)
+
+    #max pool the last conv layer
+    kernel, stride = 3, 2
+    m = nn.MaxPool2d(kernel, stride)
+    feat_cube[0] = m(feat_cube[0]) #will now be 64 x 32 x 1 x 1
+    feat_cube[1] = m(feat_cube[1]) #will now be 64 x 64 x 1 x 1
+    feat_cube[2] = m(feat_cube[2]) #will now be 64 x 32 x 1 x 1
+    feat_cube[3] = m(feat_cube[3]) #will now be 64 x 64 x 1 x 1
+    feat_cube[4] = m(feat_cube[4]) #will now be 64 x 64 x 1 x 1
+    feat_cube[5] = m(feat_cube[5]) #will now be 64 x 64 x 1 x 1
+    feat_cube[6] = m(feat_cube[6]) #will now be 64 x 64 x 1 x 1
+
+    lt = []  # this contains the soft max attention for each pooled layer
+    for x in xrange(len(feat_cube)):
+        lt.append(softmax(feat_cube[x]))
 
     inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(1,1,-1)  #will have 2048 connections
     regress = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*32],\
@@ -330,19 +320,13 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
 
     '''
     feat cube contains the feature maps of the last convolution layer. of shape
-    64L, 32L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 32L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
-    64L, 64L, 3L, 3L
+    [[64L, 32L, 3L, 3L], [64L, 64L, 3L, 3L], [64L, 32L, 3L, 3L], [64L, 64L, 3L, 3L], 
+    [64L, 64L, 3L, 3L],  [64L, 64L, 3L, 3L], [64L, 64L, 3L, 3L] ]
     '''
 
     inLSTM3 = torch.mul(l3in[0], feat_cube[2].view(1, 1, -1))
-    #reshape last lstm layer
-    # regress = regress
-    regress.lstm3 = nn.LSTM(1024, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
+    regress.lstm3 = nn.LSTM(1024, 64*64, 1, bias=False,\
+                            batch_first=False, dropout=0.3) #reshape last lstm layer
     for m in regress.modules():
         for t in m.state_dict().values():
             init.uniform(t, 0, 1)
@@ -375,64 +359,45 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     inLSTM7 = torch.mul(l7in[0], feat_cube[6].view(1, 1, -1))
     y7, l8in = regress(inLSTM7)
 
-    #zt_vec \in R^D captures the visual info associated with particular input locations
-    zt_vec = [y1, y2, y3, y4, y5, y6, y7]
-
     # concatenate the attention variables
-    attn_2 = torch.stack((zt_vec[1], zt_vec[2], zt_vec[3], zt_vec[4],\
-                        zt_vec[5], zt_vec[6]), 0)
-    attn_2 = attn_2.view(-1, attn_2.size(-1))
-    attn_1 = zt_vec[0]
+    attn_2 = y1
+    attn_1 = torch.stack((y2, y3, y4, y5, y6, y7), 0).view(-1, y2.size(-1)).t()
 
-    """
-    at run time we are going to draw samples from a multinomial
-    probability distribution
+    num_samples = 1
+    replacement = True
+    regress_input = torch.multinomial(attn_1, num_samples, replacement).double()
+    # regress_input = attn_1.multinomial().double()
 
-    # regress_input will be a 1 x 4096 Tensor
-    """
+    global resnet
+    resnet.saved_attention.append(regress_input)
 
-    # print(regress_input.size(), attn_2.size())
-    sample_idx = None
-    if args.multinomial:
-        regress_input = torch.multinomial(attn_2.t(), 1, True).double()
-    else:
-        sample_idx = np.random.randint(0, 5)
-        regress_input = attn_2[sample_idx].unsqueeze(0).t()
-    # print('regress input: ', regress_input)
+    return regress_input
+
+def trainClassifierRegressor(train_loader, bbox_loader, args):
+    #cnn hyperparameters
+    clr = args.clr
+    batchSize = args.cbatchSize
+    maxIter = args.cmaxIter
+
+    #grab global vars
+    global resnet, rnn_optimizer, regressor
+
+    #rnn hyperparameters
+    numLayers, regressLength = 2, 5
+    noutputs, rlr = 12, args.rnnLR
+    inputSize, nHidden = 128, [64, 32]
 
     #determine classification loss and clsfx_optimizer
     clsfx_crit = nn.CrossEntropyLoss()
     clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
 
-    X_tr = int(0.8*len(regress_input))
-    X_te = int(0.2*len(regress_input))
-    X = len(regress_input)
-
-    #reshape inputs
-    rtrain_X = regress_input[:X_tr].t().expand(regressLength, args.cbatchSize, X_tr)
-    rtest_X = regress_input[X_tr:].t().expand(regressLength, args.cbatchSize, X_te+1)
-
-    # print('rTrain_X size: ', rtrain_X)
-    # Get regressor model and predict bounding boxes
     regress_crit = nn.MSELoss()
-    regressor = StackRegressive(inputSize=rtrain_X.size(2), \
-                                nHidden=[int(rtrain_X.size(2)/40), \
-                                int(rtrain_X.size(2)/120)],noutputs=8, \
-                                batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
-                                numLayers=1)
 
-    # targ_X = list(enumerate(bbox_loader)).pop()#[0][0]
     for k, v in enumerate(bbox_loader):
         targ_X  = v
     targ_X      = targ_X[0]
 
-    if(args.ship2gpu):
-        rtrain_X    = rtrain_X.cuda()
-        rtest_X     = rtest_X.cuda()
-        targ_X      = targ_X.cuda()
-        regressor   = regressor.cuda()
-    #define optimizer
-    rnn_optimizer = optim.SGD(regressor.parameters(), rlr)
+    running_reward = 10
 
     # Train classifier
     for epoch in range(maxIter): #run through the images maxIter times
@@ -441,34 +406,45 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             if(args.ship2gpu):
                 train_X = train_X.cuda()
                 train_Y = train_Y.cuda()
+                targ_X  = targ_X.cuda()
                 resnet  = resnet.cuda()
 
             images   = Variable(train_X)
             labels   = Variable(train_Y)
 
-            #rnn input
-            rtargets = targ_X[:,i:i+regressLength,:]
-            #reshape targets for inputs
-            rtargets = Variable(rtargets.view(regressLength, -1))
-
             # Forward + Backward + Optimize
             clsfx_optimizer.zero_grad()
-            rnn_optimizer.zero_grad()
-
             #predict classifier outs and regressor outputs
             outputs  = resnet(images)
-            routputs = regressor(rtrain_X)
+            loss     = clsfx_crit(outputs, labels)      # compute loss
+            loss.backward()                # backward pass
+            clsfx_optimizer.step()         # step optimizer
 
-            #compute loss
-            loss     = clsfx_crit(outputs, labels)
+            #rnn input
+            rtargets = Variable(targ_X[:,i:i+regressLength,:]).view(regressLength, -1)
+            #extract last convolution layer
+            regress_input = select_regress_input(resnet.layer3)
+            resnet.rewards.append(regress_input)
+
+            X = len(regress_input)
+            X_tr, X_te = int(0.8*X), int(0.2*X)
+
+            #train lstm regressor
+            # print('regress_input[:X_tr]: ', regress_input.size())
+            rtrain_X = regress_input[:X_tr].t().expand(regressLength, args.cbatchSize, X_tr)
+            rtest_X = regress_input[X_tr:].t().expand(regressLength, args.cbatchSize, X_te+1)
+
+            if(args.ship2gpu):
+                rtrain_X    = rtrain_X.cuda()
+                rtest_X     = rtest_X.cuda()
+                regressor   = regressor.cuda()
+
+            routputs = regressor(rtrain_X)
             rloss    = regress_crit(routputs, rtargets)
 
-            #backward pass
-            loss.backward()
-            rloss.backward(-rloss[0])
+            running_reward = running_reward * 0.99 + i * 0.01
+            rnn_stochastic_backprop(rlr)
 
-            # step optimizer
-            clsfx_optimizer.step()
             rnn_optimizer.step()
 
             print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f" %(epoch+1, maxIter, i+1,
@@ -479,7 +455,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 rlr *= 1./epoch
 
                 clsfx_optimizer = optim.Adam(resnet.parameters(), clr)
-                rnn_optimizer   = optim.SGD(regressor.parameters(), rlr)
+                rnn_optimizer   = optim.Adam(regressor.parameters(), rlr)
 
     torch.save(regressor.state_dict(), 'regressnet_' + str(args.cmaxIter) + '.pkl')
     return resnet, regressor, rtest_X
@@ -516,7 +492,7 @@ def main(args):
 
     # train  conv+rnn nets
     # try:
-    net, reg, rtest_X = trainClassifierRegressor(train_loader, bbox_loader, args)        
+    net, reg, rtest_X = trainClassifierRegressor(train_loader, bbox_loader, args)
     # test conv+rnn nets
     testClassifierRegressor(test_loader, net, reg, rtest_X, args)
     # except:
