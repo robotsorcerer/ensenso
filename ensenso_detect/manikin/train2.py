@@ -272,6 +272,9 @@ def rnn_stochastic_backprop(rlr):
     del resnet.rewards[:]
     del resnet.saved_attention[:]
 
+def get_lstm_input(x, y):
+    return torch.mul(x[0], y.view(1, 1, -1))
+
 def select_regress_input(last_layer):
     """
     This section is a variant of this paper:
@@ -307,7 +310,7 @@ def select_regress_input(last_layer):
     for x in xrange(len(feat_cube)):
         lt.append(softmax(feat_cube[x]))
 
-    inLSTM1 = torch.mul(lt[0], feat_cube[0]).view(1,1,-1)  #will have 2048 connections
+    inLSTM1 = get_lstm_input(lt, feat_cube[0])  #will have 2048 connections
     regress = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*32],\
                              noutputs=64*32,batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
                              numLayers=1)
@@ -335,7 +338,7 @@ def select_regress_input(last_layer):
         init.uniform(param3[i], 0, 1)
     y3, l2in = regress(inLSTM3)
 
-    inLSTM2 = torch.mul(l2in[0], feat_cube[1].view(1, 1, -1))
+    inLSTM2 = get_lstm_input(l2in[0], feat_cube[1])
     # Fix layers 1, 3, 4, 5, 6, 7  | layers 0 and 2 have unique shapes
     regress.lstm1 = nn.LSTM(64*64, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
     regress.lstm2 = nn.LSTM(64*64, 64*16, 1, bias=False, batch_first=False, dropout=0.3)
@@ -350,13 +353,14 @@ def select_regress_input(last_layer):
     for i in range(len(params_n)):
         init.uniform(params_n[i], 0, 1)
     y2, l4in = regress(inLSTM2)
-    inLSTM4 = torch.mul(l4in[0], feat_cube[3].view(1, 1, -1))
+
+    inLSTM4 = get_lstm_input(l4in[0], feat_cube[3])
     y4, l5in = regress(inLSTM4)
-    inLSTM5 = torch.mul(l5in[0], feat_cube[4].view(1, 1, -1))
+    inLSTM5 = get_lstm_input(l5in[0], feat_cube[4])
     y5, l6in = regress(inLSTM5)
-    inLSTM6 = torch.mul(l6in[0], feat_cube[5].view(1, 1, -1))
+    inLSTM6 = get_lstm_input(l6in[0], feat_cube[5])
     y6, l7in = regress(inLSTM6)
-    inLSTM7 = torch.mul(l7in[0], feat_cube[6].view(1, 1, -1))
+    inLSTM7 = get_lstm_input(l7in[0], feat_cube[6])
     y7, l8in = regress(inLSTM7)
 
     # concatenate the attention variables
