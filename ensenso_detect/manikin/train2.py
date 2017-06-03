@@ -3,7 +3,7 @@ from __future__ import print_function
 __author__ = 'Olalekan Ogunmolu'
 
 #py utils
-import os
+import os, gc
 import json, time
 import argparse
 from PIL import Image
@@ -60,6 +60,9 @@ args = parser.parse_args()
 print(args)
 
 torch.set_default_tensor_type('torch.DoubleTensor')
+# torch.backends.cudnn.enabled = False
+# torch.backends.cudnn.benchmark = True
+
 
 class LoadAndParse(object):
 
@@ -252,6 +255,9 @@ rnn_optimizer = optim.Adam(regressor.parameters(), args.rnnLR)
 def get_lstm_input(x, y):
     return torch.mul(x[0], y.view(1,1,-1))
 
+def memory_usage():
+        return int(open('/proc/self/statm').read().split()[1])
+
 def select_regress_input(last_layer):
     """
     This section is a variant of this paper:
@@ -295,11 +301,13 @@ def select_regress_input(last_layer):
 
     if args.ship2gpu:
         regress = regress.cuda()
+    gc.collect()
 
     for name, weights in regress.named_parameters():
         init.uniform(weights, 0, 1)
 
     y1, l3in = regress(inLSTM1)
+    gc.collect()
 
     '''
     feat cube contains the feature maps of the last convolution layer. of shape
@@ -313,6 +321,7 @@ def select_regress_input(last_layer):
 
     if args.ship2gpu:
         regress.lstm3 = regress.lstm3.cuda() 
+    gc.collect()
 
     for m in regress.modules():
         for t in m.state_dict().values():
@@ -418,6 +427,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     rewards, running_reward, targ_X = [], 10, targ_X[0]
 
     # Train classifier + regressor
+    start_m = None
     for epoch in range(maxIter): #run through the images maxIter times
         for i, (train_X, train_Y) in enumerate(train_loader):
 
@@ -426,6 +436,11 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 train_Y = train_Y.cuda()
                 targ_X  = targ_X.cuda()
                 resnet  = resnet.cuda()
+
+            gc.collect()
+            m = memory_usage()
+
+            start_m = m if start_m is None else start_m            
 
             images, labels   = Variable(train_X), Variable(train_Y)
 
@@ -446,6 +461,8 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 rtrain_X    = rtrain_X.cuda()
                 rtest_X     = rtest_X.cuda()
                 regressor   = regressor.cuda()
+                
+            gc.collect()
 
             # Forward + Backward + Optimize
             clsfx_optimizer.zero_grad()
@@ -454,6 +471,8 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             #predict classifier outs and regressor outputs
             outputs  = resnet(images)
             routputs = regressor(rtrain_X)
+
+            gc.collect()
 
             # compute loss
             loss     = clsfx_crit(outputs, labels)      
@@ -467,8 +486,8 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
             clsfx_optimizer.step()   
             rnn_optimizer.step()    
 
-            print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f" %(epoch+1, maxIter, i+1,
-                                                loss.data[0], rloss.data[0]))
+            print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f, mem_usage %.1f MB" %(epoch+1, maxIter, i+1,
+                                                loss.data[0], rloss.data[0], m-start_m/256))
 
             if epoch % 5 == 0 and epoch >0:
                 clr *= 1./epoch
@@ -476,7 +495,7 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
 
                 clsfx_optimizer = optim.Adam(resnet.parameters(), clr)
                 rnn_optimizer   = optim.Adam(regressor.parameters(), rlr)
-                
+
     torch.save(regressor.state_dict(), 'regressnet_' + str(args.cmaxIter) + '.pkl')
     return resnet, regressor, rtest_X
 
@@ -492,7 +511,7 @@ def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
 
         #forward
         outputs = resnet(images)
-        # routputs = regressnet(rtest_X)
+        routputs = regressnet(rtest_X)
 
         #check predcictions
         _, predicted = torch.max(outputs.data, 1)
