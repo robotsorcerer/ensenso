@@ -40,7 +40,7 @@ sys.excepthook = ultratb.FormattedTB(mode='Verbose',
 
 #myne utils
 from model import ResNet, ResidualBlock, \
-                StackRegressive, RecurrentModel
+                StackRegressive, RecurrentModel, SimpleRegressor
 from utils import get_bounding_boxes as bbox
 
 parser = argparse.ArgumentParser(description='Process environmental variables')
@@ -251,6 +251,9 @@ regressor = StackRegressive(inputSize=3276, \
                             batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
                             numLayers=1)
 rnn_optimizer = optim.Adam(regressor.parameters(), args.rnnLR)
+
+fdfwd = SimpleRegressor(noutputs=8, inputSize=3276, nHidden=[int(3276/40), int(3276/120)], \
+                        batchSize=args.cbatchSize, ship2gpu=args.ship2gpu)
 
 def get_lstm_input(x, y):
     return torch.mul(x[0], y.view(1,1,-1))

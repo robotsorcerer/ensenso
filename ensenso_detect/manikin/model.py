@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 from random import shuffle
@@ -137,6 +138,30 @@ class StackRegressive(nn.Module):
 
         return out
 
+class SimpleRegressor(nn.Module):
+    def __init__(self, **kwargs):
+        super(SimpleRegressor, self).__init__()
+
+        self.criterion = nn.MSELoss(size_average=False)
+        # Backprop Through Time (Recurrent Layer) Params
+        self.noutputs       = kwargs['noutputs']
+        self.input_size     = kwargs['inputSize']
+        self.hidden_size    = kwargs['nHidden']
+        self.batch_size     = kwargs['batchSize']
+        self.noutputs       = kwargs['noutputs']
+        self.ship2gpu       = kwargs['ship2gpu']
+
+        #define the recurrent connections
+        self.fc1 = nn.Linear(self.input_size, self.hidden_size[0])
+        self.fc2 = nn.Linear(self.hidden_size[0], self.noutputs)
+
+    def forward(self, x):
+
+        out = F.relu(self.fc1(x))
+        out = self.fc2(out)
+
+        return out
+
 class RecurrentModel(nn.Module):
     def __init__(self, **kwargs):
         super(RecurrentModel, self).__init__()
@@ -145,9 +170,6 @@ class RecurrentModel(nn.Module):
         Workshop track -ICLR 2016 ACTION RECOGNITION USING VISUAL ATTENTION.
         Retrieved from https://arxiv.org/pdf/1511.04119.pdf
         '''
-
-        if torch.cuda.is_available():
-            self.cuda()
 
         self.criterion = nn.MSELoss(size_average=False)
         # Backprop Through Time (Recurrent Layer) Params
