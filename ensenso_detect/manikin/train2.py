@@ -3,7 +3,7 @@ from __future__ import print_function
 __author__ = 'Olalekan Ogunmolu'
 
 #py utils
-import os
+import os, gc
 import json, time
 import argparse
 from PIL import Image
@@ -56,8 +56,13 @@ parser.add_argument('--classifier', type=str, default='')
 parser.add_argument('--cepoch', type=int, default=500)
 parser.add_argument('--verbose', type=bool, default=False)
 args = parser.parse_args()
+
 print(args)
+
 torch.set_default_tensor_type('torch.DoubleTensor')
+# torch.backends.cudnn.enabled = False
+# torch.backends.cudnn.benchmark = True
+
 
 class LoadAndParse(object):
 
@@ -245,35 +250,13 @@ regressor = StackRegressive(inputSize=3276, \
                             int(3276/120)],noutputs=8, \
                             batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
                             numLayers=1)
-
-def rnn_stochastic_backprop(rlr):
-    #define optimizer
-    rnn_optimizer = optim.Adam(regressor.parameters(), rlr)
-    rewards = []
-
-    for r in resnet.saved_attention[::-1]:
-        R, gamma = 0, 0.99
-        R = r + gamma * R
-        rewards.insert(0, R)
-
-    rewards = rewards[0] 
-    eps = np.finfo(np.float64).eps
-    rewards = (rewards - rewards.mean().data[0])/(rewards + rewards.std().data[0] + eps)
-    rewards = rewards.cuda() if args.ship2gpu else rewards
-
-    for action, r in zip(resnet.saved_attention, rewards):
-        print('action {}, r {}'.format(action, r))
-        action.reinforce(r)
-
-    rnn_optimizer.zero_grad()
-    autograd.backward(resnet.saved_attention, [None for _ in resnet.saved_attention])
-    rnn_optimizer.step()
-
-    del resnet.rewards[:]
-    del resnet.saved_attention[:]
+rnn_optimizer = optim.Adam(regressor.parameters(), args.rnnLR)
 
 def get_lstm_input(x, y):
-    return torch.mul(x[0], y.view(1, 1, -1))
+    return torch.mul(x[0], y.view(1,1,-1))
+
+def memory_usage():
+        return int(open('/proc/self/statm').read().split()[1])
 
 def select_regress_input(last_layer):
     """
@@ -308,18 +291,23 @@ def select_regress_input(last_layer):
 
     lt = []  # this contains the soft max attention for each pooled layer
     for x in xrange(len(feat_cube)):
-        lt.append(softmax(feat_cube[x]))
+        lt.append(softmax(feat_cube[x].view(1, 1, -1)))
 
     inLSTM1 = get_lstm_input(lt, feat_cube[0])  #will have 2048 connections
     regress = RecurrentModel(inputSize=inLSTM1.size(2), nHidden=[inLSTM1.size(2),1024, 64*32],\
                              noutputs=64*32,batchSize=args.cbatchSize, ship2gpu=args.ship2gpu, \
                              numLayers=1)
     #use normal initialization for regression layer
-    params = list(regress.parameters())
-    for i in range(len(params)):
-        init.uniform(params[i], 0, 1)
+
+    if args.ship2gpu:
+        regress = regress.cuda()
+    gc.collect()
+
+    for name, weights in regress.named_parameters():
+        init.uniform(weights, 0, 1)
 
     y1, l3in = regress(inLSTM1)
+    gc.collect()
 
     '''
     feat cube contains the feature maps of the last convolution layer. of shape
@@ -330,6 +318,11 @@ def select_regress_input(last_layer):
     inLSTM3 = torch.mul(l3in[0], feat_cube[2].view(1, 1, -1))
     regress.lstm3 = nn.LSTM(1024, 64*64, 1, bias=False,\
                             batch_first=False, dropout=0.3) #reshape last lstm layer
+
+    if args.ship2gpu:
+        regress.lstm3 = regress.lstm3.cuda() 
+    gc.collect()
+
     for m in regress.modules():
         for t in m.state_dict().values():
             init.uniform(t, 0, 1)
@@ -338,11 +331,15 @@ def select_regress_input(last_layer):
         init.uniform(param3[i], 0, 1)
     y3, l2in = regress(inLSTM3)
 
-    inLSTM2 = get_lstm_input(l2in[0], feat_cube[1])
+    inLSTM2 = get_lstm_input(l2in, feat_cube[1])
     # Fix layers 1, 3, 4, 5, 6, 7  | layers 0 and 2 have unique shapes
     regress.lstm1 = nn.LSTM(64*64, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
     regress.lstm2 = nn.LSTM(64*64, 64*16, 1, bias=False, batch_first=False, dropout=0.3)
     regress.lstm3 = nn.LSTM(64*16, 64*64, 1, bias=False, batch_first=False, dropout=0.3)
+
+    if args.ship2gpu:
+        regress = regress.cuda()
+
     #use normal initialization for regression layer
     for m in regress.modules():
         if(isinstance(m, nn.LSTM)):
@@ -354,13 +351,13 @@ def select_regress_input(last_layer):
         init.uniform(params_n[i], 0, 1)
     y2, l4in = regress(inLSTM2)
 
-    inLSTM4 = get_lstm_input(l4in[0], feat_cube[3])
+    inLSTM4 = get_lstm_input(l4in, feat_cube[3])
     y4, l5in = regress(inLSTM4)
-    inLSTM5 = get_lstm_input(l5in[0], feat_cube[4])
+    inLSTM5 = get_lstm_input(l5in, feat_cube[4])
     y5, l6in = regress(inLSTM5)
-    inLSTM6 = get_lstm_input(l6in[0], feat_cube[5])
+    inLSTM6 = get_lstm_input(l6in, feat_cube[5])
     y6, l7in = regress(inLSTM6)
-    inLSTM7 = get_lstm_input(l7in[0], feat_cube[6])
+    inLSTM7 = get_lstm_input(l7in, feat_cube[6])
     y7, l8in = regress(inLSTM7)
 
     # concatenate the attention variables
@@ -369,13 +366,37 @@ def select_regress_input(last_layer):
 
     num_samples = 1
     replacement = True
-    regress_input = torch.multinomial(attn_1, num_samples, replacement).double()
-    # regress_input = attn_1.multinomial().double()
+    regress_input = torch.multinomial(attn_1, num_samples, replacement)
 
     global resnet
     resnet.saved_attention.append(regress_input)
 
     return regress_input
+
+def rnn_stochastic_backprop(rlr):
+    rewards = []
+    global rnn_optimizer
+
+    for r in resnet.saved_attention[::-1]:
+        r = r.double()
+        R, gamma = 0, 0.99
+        R = r + gamma * R
+        rewards.insert(0, R)
+
+    rewards = rewards[0] 
+    eps     = np.finfo(np.float64).eps
+    rewards = (rewards - rewards.mean().data[0])/(rewards + rewards.std().data[0] + eps)
+    rewards = rewards.cuda() if args.ship2gpu else rewards
+
+    for action, r in zip(resnet.saved_attention, rewards):
+        action.reinforce(action.data.double())
+
+    rnn_optimizer.zero_grad()
+    torch.autograd.backward(resnet.saved_attention, [None for _ in resnet.saved_attention])
+    rnn_optimizer.step()
+
+    del resnet.rewards[:]
+    del resnet.saved_attention[:]
 
 def trainClassifierRegressor(train_loader, bbox_loader, args):
     #cnn hyperparameters
@@ -392,18 +413,21 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
     inputSize, nHidden = 128, [64, 32]
 
     #determine classification loss and clsfx_optimizer
-    clsfx_crit = nn.CrossEntropyLoss()
-    clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
-
+    clsfx_crit   = nn.CrossEntropyLoss()
     regress_crit = nn.MSELoss()
+
+    #define optimizer
+    clsfx_optimizer = torch.optim.Adam(resnet.parameters(), clr)
+    rnn_optimizer   = optim.Adam(regressor.parameters(), rlr)
+
 
     for k, v in enumerate(bbox_loader):
         targ_X  = v
-    targ_X      = targ_X[0]
 
-    running_reward = 10
+    rewards, running_reward, targ_X = [], 10, targ_X[0]
 
-    # Train classifier
+    # Train classifier + regressor
+    start_m = None
     for epoch in range(maxIter): #run through the images maxIter times
         for i, (train_X, train_Y) in enumerate(train_loader):
 
@@ -413,28 +437,23 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 targ_X  = targ_X.cuda()
                 resnet  = resnet.cuda()
 
-            images   = Variable(train_X)
-            labels   = Variable(train_Y)
+            gc.collect()
+            m = memory_usage()
 
-            # Forward + Backward + Optimize
-            clsfx_optimizer.zero_grad()
-            #predict classifier outs and regressor outputs
-            outputs  = resnet(images)
-            loss     = clsfx_crit(outputs, labels)      # compute loss
-            loss.backward()                # backward pass
-            clsfx_optimizer.step()         # step optimizer
+            start_m = m if start_m is None else start_m            
+
+            images, labels   = Variable(train_X), Variable(train_Y)
 
             #rnn input
-            rtargets = Variable(targ_X[:,i:i+regressLength,:]).view(regressLength, -1)
-            #extract last convolution layer
-            regress_input = select_regress_input(resnet.layer3)
+            rtargets = Variable(targ_X[:,i:i+regressLength,:]).view(regressLength, -1)            
+            regress_input = select_regress_input(resnet.layer3).double() #extract last convolution layer
             resnet.rewards.append(regress_input)
 
             X = len(regress_input)
-            X_tr, X_te = int(0.8*X), int(0.2*X)
+            X_tr, X_te = int(0.8*X), int(0.2*X) 
 
             #train lstm regressor
-            # print('regress_input[:X_tr]: ', regress_input.size())
+            # print('regress_input[:X_tr]: ', regress_input)
             rtrain_X = regress_input[:X_tr].t().expand(regressLength, args.cbatchSize, X_tr)
             rtest_X = regress_input[X_tr:].t().expand(regressLength, args.cbatchSize, X_te+1)
 
@@ -442,17 +461,33 @@ def trainClassifierRegressor(train_loader, bbox_loader, args):
                 rtrain_X    = rtrain_X.cuda()
                 rtest_X     = rtest_X.cuda()
                 regressor   = regressor.cuda()
+                
+            gc.collect()
 
+            # Forward + Backward + Optimize
+            clsfx_optimizer.zero_grad()
+            rnn_optimizer.zero_grad()
+
+            #predict classifier outs and regressor outputs
+            outputs  = resnet(images)
             routputs = regressor(rtrain_X)
+
+            gc.collect()
+
+            # compute loss
+            loss     = clsfx_crit(outputs, labels)      
             rloss    = regress_crit(routputs, rtargets)
 
-            running_reward = running_reward * 0.99 + i * 0.01
+            # backward pass
+            loss.backward()     
             rnn_stochastic_backprop(rlr)
 
-            rnn_optimizer.step()
+            # step optimizer
+            clsfx_optimizer.step()   
+            rnn_optimizer.step()    
 
-            print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f" %(epoch+1, maxIter, i+1,
-                                                loss.data[0], rloss.data[0]))
+            print ("Epoch [%d/%d], Iter [%d] cLoss: %.8f, rLoss: %.4f, mem_usage %.1f MB" %(epoch+1, maxIter, i+1,
+                                                loss.data[0], rloss.data[0], m-start_m/256))
 
             if epoch % 5 == 0 and epoch >0:
                 clr *= 1./epoch
@@ -476,7 +511,7 @@ def testClassifierRegressor(test_loader, resnet, regressnet, rtest_X, args):
 
         #forward
         outputs = resnet(images)
-        # routputs = regressnet(rtest_X)
+        routputs = regressnet(rtest_X)
 
         #check predcictions
         _, predicted = torch.max(outputs.data, 1)

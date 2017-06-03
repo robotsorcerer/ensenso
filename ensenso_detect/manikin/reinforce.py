@@ -66,7 +66,7 @@ def finish_episode():
     rewards = torch.Tensor(rewards)
     rewards = (rewards - rewards.mean()) / (rewards.std() + np.finfo(np.float32).eps)
 
-    for action, r in zip(policy.saved_actions, rewards):        
+    for action, r in zip(policy.saved_actions, rewards):  
         action.reinforce(r)
 
     optimizer.zero_grad()
