@@ -166,11 +166,14 @@ void readAndLoadParams()
 {
   boost::filesystem::path data_dir, settingsPath;
   std::stringstream ss;
-  pathfinder::getDataDirectory(data_dir);
-
+  pathfinder::getDataDirectory(std::move(data_dir));
+  // data_dir += / "data";
   // settingsPath = data_dir;
-  ss << data_dir.c_str() << "/ensenso_calib_params.json";
+  ss << data_dir.c_str() << "/data/ensenso_calib_params.json";
   std::string settingsFile = ss.str();
+
+  ROS_INFO_STREAM("settingsFile: " << settingsFile);
+  ROS_INFO_STREAM("data_dir: " << data_dir.c_str());
 
   ROS_INFO_STREAM("Loading settings file: " << settingsFile);
   std::ifstream file(settingsFile);

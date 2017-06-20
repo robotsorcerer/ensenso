@@ -40,7 +40,7 @@ namespace pathfinder
         	const std::string&, const std::string&, const std::string&,
         	const std::string&> getCurrentPath();
 
-  bool getDataDirectory(boost::filesystem::path data_dir);
+  bool getDataDirectory(boost::filesystem::path&& data_dir);
 
   // static std::string getDateTimeStr();
 }

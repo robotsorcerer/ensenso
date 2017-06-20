@@ -53,11 +53,11 @@ namespace pathfinder
 			ROS_INFO("paths %s, and %s not found", imagesPath.c_str(), cloudsPath.c_str());
 	}
 
-	bool getDataDirectory(boost::filesystem::path data_dir)
+	bool getDataDirectory(boost::filesystem::path&& data_dir)
 	{
 		boost::filesystem::path ensensoPath;
-		getROSPackagePath("ensenso", ensensoPath);
-		data_dir = ensensoPath / "data";
+		getROSPackagePath("ensenso", data_dir);
+		// data_dir = ensensoPath / "data";
 		if(!data_dir.empty())
 		{
 			ROS_INFO("data path: %s", data_dir.c_str());
