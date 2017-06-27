@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ensenso)
 
+find_package(PCL 1.2 REQUIRED)
+
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
+add_executable (ensenso pcdreader.cpp)
+target_link_libraries (ensenso pcdreader ${PCL_LIBRARIES})
+
 # set cmake modules path for ensenso
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
                       ${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules)
@@ -18,17 +27,18 @@ ELSE()
 ENDIF()
 
 #ensenso only works with pcl version 1.8.0. Set this to the path where your pclConfig.cmake lives
-# set(PCL_DIR /usr/local/share/pcl-1.8/)
+set(PCL_DIR /user/local/include/pcl-1.8)
+set(ENSENSO_INCLUDE_DIR /include)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(PkgConfig)
-# find_library(PCL PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_library(PCL PATHS /usr/local/lib NO_DEFAULT_PATH)
 find_package(PCL 1.8.0 REQUIRED)
 # find_package(PCL REQUIRED)
 pkg_search_module(Eigen3 REQUIRED eigen3)
 
-# find_library(PCL /usr/local/lib/ NO_CMAKE_PATH)
+find_library(PCL /usr/local/lib/ NO_CMAKE_PATH)
 
 find_package(catkin REQUIRED COMPONENTS
 	message_generation

@@ -4,6 +4,8 @@
 #include <chrono>
 #include <iostream>
 #include <cmath>
+#include "opencv2/opencv.hpp"
+//#include "getBlobsContour.cpp"
 
 #include <ros/ros.h>
 #include <ros/spinner.h>
@@ -34,6 +36,13 @@ using namespace pathfinder;
 using PointT = pcl::PointXYZ;
 using PointCloudT = pcl::PointCloud<PointT>;
 using pcl_viz = pcl::visualization::PCLVisualizer;
+
+struct Center
+  {
+      cv::Point2d location;
+      double radius;
+      double confidence;
+  };
 
 class Receiver
 {
@@ -208,9 +217,17 @@ private:
   void imageDisp()
   {
     cv::Mat ir;
+    cv::Mat dst;
     PointCloudT cloud;
+    PointCloudT blob;
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(windowName, 640, 480) ;
+    cv::SimpleBlobDetector::Params params;
+    params.minArea = 5000;
+    params.maxArea = INT_MAX;
+    cv::SimpleBlobDetector detector(params);
+    cv::namedWindow("blur", cv::WINDOW_NORMAL);
+    cv::resizeWindow("blur", 640, 480) ;
 
     for(; running && ros::ok();)
     {
@@ -221,7 +238,151 @@ private:
         cloud = this->cloud;
         updateImage = false;
 
+        cv::medianBlur(ir, dst, 17);
+/*
+      std::vector<cv::KeyPoint> keypoints;
+      std::vector<cv::KeyPoint> contours;
+      BlobDetector detector = new BlobDetector();
+      detector.detect(dst, keypoints, contours);
+
+*/
+
+    cv::Mat grayscaleImage;
+    if (dst.channels() == 3)
+        cvtColor(dst, grayscaleImage, CV_BGR2GRAY);
+    else
+      grayscaleImage = dst.clone();
+
+    cv::Mat bImage;
+    cv::threshold(grayscaleImage, bImage, 128, 255, CV_THRESH_BINARY);
+
+    //Find the contours. Use the contourOutput Mat so the original image doesn't get overwritten
+    std::vector<std::vector<cv::Point> > contours;
+    cv::Mat contourOutput = bImage.clone();
+    cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE );
+
+    std::vector<std::vector<cv::Point> > newContours;
+    for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
+    {
+
+        Center center;
+        center.confidence = 1;
+        cv::Moments moms = moments(cv::Mat(contours[contourIdx]));
+        if (true)
+        {
+            double area = moms.m00;
+            if (area < 5000 || area >= std::numeric_limits<float>::max())
+                continue;
+        }
+
+        if (false)
+        {
+            double area = moms.m00;
+            double perimeter = cv::arcLength(cv::Mat(contours[contourIdx]), true);
+            double ratio = 4 * CV_PI * area / (perimeter * perimeter);
+            if (ratio < 0.8f || ratio >= std::numeric_limits<float>::max())
+                continue;
+        }
+
+        if (true)
+        {
+            double denominator = sqrt(pow(2 * moms.mu11, 2) + pow(moms.mu20 - moms.mu02, 2));
+            const double eps = 1e-2;
+            double ratio;
+            if (denominator > eps)
+            {
+                double cosmin = (moms.mu20 - moms.mu02) / denominator;
+                double sinmin = 2 * moms.mu11 / denominator;
+                double cosmax = -cosmin;
+                double sinmax = -sinmin;
+
+                double imin = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmin - moms.mu11 * sinmin;
+                double imax = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmax - moms.mu11 * sinmax;
+                ratio = imin / imax;
+            }
+            else
+            {
+                ratio = 1;
+            }
+
+            if (ratio < 0.1f || ratio >= std::numeric_limits<float>::max())
+                continue;
+
+            center.confidence = ratio * ratio;
+        }
+
+        if (true)
+        {
+            std::vector < cv::Point > hull;
+            cv::convexHull(cv::Mat(contours[contourIdx]), hull);
+            double area = cv::contourArea(cv::Mat(contours[contourIdx]));
+            double hullArea = cv::contourArea(cv::Mat(hull));
+            double ratio = area / hullArea;
+            if (ratio < 0.95f || ratio >= std::numeric_limits<float>::max())
+                continue;
+        }
+
+        center.location = cv::Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
+
+        if (true)
+        {
+            if (binaryImage.at<uchar> (cv::cvRound(center.location.y), cv::cvRound(center.location.x)) != 0)
+                continue;
+        }
+
+        //compute blob radius
+        {
+            vector<double> dists;
+            for (size_t pointIdx = 0; pointIdx < contours[contourIdx].size(); pointIdx++)
+            {
+                cv::Point2d pt = contours[contourIdx][pointIdx];
+                dists.push_back(norm(center.location - pt));
+            }
+            std::sort(dists.begin(), dists.end());
+            center.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
+        }
+
+        newContours.push_back(countours[contourIdx]);
+
+}
+
+
+
+
+
+
+
+
+
+
+  
+    //Draw the contours
+    cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
+    cv::Scalar colors[3];
+    colors[0] = cv::Scalar(255, 0, 0);
+    colors[1] = cv::Scalar(0, 255, 0);
+    colors[2] = cv::Scalar(0, 0, 255);
+    for (size_t idx = 0; idx < contours.size(); idx++) {
+        cv::drawContours(dst, newContours, idx, colors[idx % 3]);
+    }
+
+    
+
+    //   detector.detect(dst, keypoints);
+        //std::vector<cv::Point> contours = detector.getContours();
+      /*  for (auto & kp : keypoints) {
+          std::vector<int> index;
+          index[0] = kp.pt.x - kp.size;
+          index[1] = kp.pt.x + kp.size;
+          index[2] = kp.pt.y - kp.size;
+          index[3] = kp.pt.y + kp.size;
+          blob = PointCloudT(cloud, index);
+        } */
+        
+
+
         cv::imshow(windowName, ir);
+        cv::imshow("blur", dst);
       }
 
       int key = cv::waitKey(1);
@@ -283,7 +444,7 @@ private:
    	int borderSize = 1;
 
     // range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
-		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
+		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,F
 		// 							noiseLevel, minimumRange, borderSize);
 
 

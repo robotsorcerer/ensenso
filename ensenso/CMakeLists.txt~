@@ -1,0 +1,134 @@
+cmake_minimum_required(VERSION 2.8.3)
+project(ensenso)
+
+find_package(PCL 1.2 REQUIRED)
+
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
+add_executable (ensenso pcdreader.cpp)
+target_link_libraries (ensenso pcdreader ${PCL_LIBRARIES})
+
+# set cmake modules path for ensenso
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+                      ${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules)
+
+# Check for c++11 support
+INCLUDE(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+IF(COMPILER_SUPPORTS_CXX11)
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+	ELSEIF(COMPILER_SUPPORTS_CXX0X)
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+ELSE()
+    MESSAGE(ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
+ENDIF()
+
+#ensenso only works with pcl version 1.8.0. Set this to the path where your pclConfig.cmake lives
+set(PCL_DIR /user/local/include/pcl-1.8)
+set(ENSENSO_INCLUDE_DIR /include)
+## Find catkin macros and libraries
+## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+## is used, also find other catkin packages
+find_package(PkgConfig)
+find_library(PCL PATHS /usr/local/lib NO_DEFAULT_PATH)
+find_package(PCL 1.8.0 REQUIRED)
+# find_package(PCL REQUIRED)
+pkg_search_module(Eigen3 REQUIRED eigen3)
+
+find_library(PCL /usr/local/lib/ NO_CMAKE_PATH)
+
+find_package(catkin REQUIRED COMPONENTS
+	message_generation
+  roscpp
+  rospy
+  sensor_msgs
+  roslib
+  rostime
+	PCL
+  message_filters
+  cv_bridge
+  tf
+  tf_conversions
+  image_transport
+  roslib
+  std_msgs
+)
+
+find_package(Boost COMPONENTS filesystem system serialization
+thread REQUIRED)
+find_package(OpenCV REQUIRED)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/opt/ensenso/cmake")
+find_package(Ensenso REQUIRED)
+# find_package(Ensenso)
+
+add_message_files(
+FILES
+HeadPose.msg
+)
+
+generate_messages(
+DEPENDENCIES
+std_msgs
+)
+
+catkin_package(
+	INCLUDE_DIRS include
+	 CATKIN_DEPENDS message_runtime roscpp rospy sensor_msgs message_filters
+	 std_msgs tf  tf_conversions cv_bridge
+	LIBRARIES pathfinder savgol boostsender
+)
+
+set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
+
+include_directories(include
+  ${catkin_INCLUDE_DIRS}
+)
+
+include_directories(
+  ${Boost_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+	${PCL_INCLUDE_DIRS}
+	${ENSENSO_INCLUDE_DIRS}
+)
+
+add_definitions(${EIGEN_DEFINITIONS})
+
+message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
+
+include_directories(${ENSENSO_INCLUDE_DIRS}
+				 ${PCL_INCLUDE_DIRS}
+				  )
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
+## Declare executable source files
+set(bridge_files src/ensenso_bridge.cxx
+              src/pathfinder.cxx)
+
+add_library(pathfinder src/pathfinder.cxx src/factory_functions.cxx)
+add_library(savgol src/savgol.cxx)
+add_library(boostsender src/boost_sender.cxx)
+
+add_dependencies(boostsender ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(pathfinder boostsender
+${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
+)
+
+## Declare a C++ executable
+add_executable(ensenso_bridge ${bridge_files})
+
+install(TARGETS savgol pathfinder boostsender
+      ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+      LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+      RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
+
+install(DIRECTORY include/${PROJECT_NAME}/
+      DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
+
+## Specify libraries to link a library or executable target against
+target_link_libraries(ensenso_bridge
+${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+)
