@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.1" halcon_version="12.0">
+<procedure name="jsonToTuple">
+<interface>
+<ic>
+<par name="JsonString" base_type="ctrl" dimension="0"/>
+</ic>
+<oc>
+<par name="MatrixID" base_type="ctrl" dimension="0"/>
+<par name="Values" base_type="ctrl" dimension="0"/>
+</oc>
+</interface>
+<body>
+<l>tuple_type (JsonString, Type)</l>
+<l>if (Type == 4)</l>
+<c>    * Es handelt sich um den Datentyp String</c>
+<l>    tuple_strstr (JsonString, '[[', Position)</l>
+<l>    if (Position != -1)</l>
+<c>        * Es handelt sich um eine Matrix</c>
+<l>        tuple_strlen (JsonString, Length)</l>
+<l>        tuple_substr (JsonString, 1, Length-2, JsonString)</l>
+<l>    endif</l>
+<c>    * </c>
+<l>    AllSubstrings := []</l>
+<l>    while (true)</l>
+<c>        * Zerlege die Matrix in ihre Eintraege</c>
+<l>        tuple_strstr (JsonString, '],[', Position)</l>
+<l>        tuple_strlen (JsonString, Length)</l>
+<l>        if (Position != -1)</l>
+<l>            tuple_substr (JsonString, 0, Position, Substring)</l>
+<l>            AllSubstrings := [AllSubstrings, Substring]</l>
+<l>            tuple_substr (JsonString, Position+2, Length-1, JsonString)</l>
+<l>        else</l>
+<l>            AllSubstrings := [AllSubstrings, JsonString]</l>
+<l>            JsonString := AllSubstrings</l>
+<l>            break</l>
+<l>        endif</l>
+<l>    endwhile</l>
+<c>    * </c>
+<l>    Dimension := |JsonString|</l>
+<l>    Values := []</l>
+<l>    for i := 0 to Dimension-1 by 1</l>
+<l>        StringTmp := JsonString[i]</l>
+<l>        tuple_strlen (StringTmp, Length)</l>
+<l>        tuple_substr (StringTmp, 1, Length-2, StringTmpStr)</l>
+<l>        tuple_split (StringTmpStr, ',', Substrings)</l>
+<l>        for j := 0 to |Substrings|-1 by 1</l>
+<l>            tuple_number (Substrings[j], Number)</l>
+<l>            Values := [Values, Number]</l>
+<l>        endfor</l>
+<l>    endfor</l>
+<c>    * </c>
+<l>    if (Dimension)</l>
+<l>        NumEntries := |Values| / Dimension</l>
+<l>        create_matrix (Dimension, NumEntries, Values, MatrixID)</l>
+<l>        transpose_matrix_mod (MatrixID)</l>
+<l>    endif</l>
+<c>    * </c>
+<l>elseif (Type == 2)</l>
+<c>    * Es handelt sich um einen Real-Eintrag</c>
+<l>    Values := JsonString</l>
+<l>    Dimension := 1</l>
+<l>    NumEntries := |Values| / Dimension</l>
+<l>    create_matrix (Dimension, NumEntries, Values, MatrixID)</l>
+<l>    transpose_matrix_mod (MatrixID)</l>
+<c>    * </c>
+<l>else</l>
+<c>    * Fehlerfall. Das war so nicht vorgesehen</c>
+<l>    Result := 0</l>
+<l>    Result := Result / Result</l>
+<c>    * </c>
+<l>endif</l>
+<c>* </c>
+<l>return ()</l>
+</body>
+<docu id="jsonToTuple">
+<short lang="de_DE">Function to extract a matrix/array from a json string</short>
+<parameters>
+<parameter id="JsonString">
+<default_type>string</default_type>
+<description lang="de_DE">Json string containing a matrix/array</description>
+<sem_type>string</sem_type>
+<type_list>
+<item>string</item>
+</type_list>
+</parameter>
+<parameter id="MatrixID">
+<default_type>integer</default_type>
+<description lang="de_DE">Halcon matrix</description>
+<mixed_type>false</mixed_type>
+<multivalue>false</multivalue>
+<sem_type>matrix</sem_type>
+<type_list>
+<item>integer</item>
+</type_list>
+</parameter>
+<parameter id="Values">
+<default_type>real</default_type>
+<description lang="de_DE">Tuple containing all values from the json string</description>
+<multivalue>optional</multivalue>
+<sem_type>real</sem_type>
+<type_list>
+<item>integer</item>
+<item>real</item>
+</type_list>
+</parameter>
+</parameters>
+</docu>
+</procedure>
+</hdevelop>

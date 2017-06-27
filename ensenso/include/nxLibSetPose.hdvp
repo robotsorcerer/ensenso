@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.1" halcon_version="12.0">
+<procedure name="nxLibSetPose">
+<interface>
+<ic>
+<par name="Handle" base_type="ctrl" dimension="0"/>
+<par name="ItemPath" base_type="ctrl" dimension="0"/>
+<par name="Pose" base_type="ctrl" dimension="0"/>
+</ic>
+</interface>
+<body>
+<c>*Convert Halcon pose into axis angle representation</c>
+<c>*Unfortunately pose_to_quat doesn't handle 'abg' poses correctly, so we need to convert to 'gba' first</c>
+<l>convert_pose_type(Pose, 'Rp+T', 'gba', 'point', Pose2)</l>
+<l>pose_to_quat(Pose2, q)</l>
+<l>angle := 2*acos(q[0])</l>
+<l>axis  := q[1:3]</l>
+<l>axisNorm := sqrt(sum(axis*axis))</l>
+<l>if (axisNorm &gt; 0)</l>
+<l>    axis := axis/axisNorm</l>
+<l>else</l>
+<l>    axis := [1, 0, 0]</l>
+<l>endif</l>
+<l>out := '{'+\
+         '"Rotation":{'+\
+             '"Axis":['+axis[0]+','+axis[1]+','+axis[2]+'],'+\
+             '"Angle":'+angle+'},'+\
+         '"Translation":['+Pose2[0]+','+Pose2[1]+','+Pose2[2]+']'+\
+       '}'</l>
+<c>*Write rotation and translation data in a block!</c>
+<c>*This is important to prevent renormalization of the axis while writing</c>
+<l>set_framegrabber_param (Handle, ItemPath, ['apply', out])</l>
+<c></c>
+<l>return ()</l>
+</body>
+<docu id="nxLibSetPose">
+<short lang="de_DE">Converts a Halcon pose into axis angle representation and writes it into the given transformation node</short>
+<parameters>
+<parameter id="Handle">
+<default_type>integer</default_type>
+<description lang="de_DE">Framegrabber handle</description>
+<mixed_type>false</mixed_type>
+<multivalue>false</multivalue>
+<sem_type>framegrabber</sem_type>
+<type_list>
+<item>integer</item>
+</type_list>
+</parameter>
+<parameter id="ItemPath">
+<default_type>string</default_type>
+<description lang="de_DE">Relative path to transformation item</description>
+<multivalue>false</multivalue>
+<sem_type>string</sem_type>
+<type_list>
+<item>string</item>
+</type_list>
+</parameter>
+<parameter id="Pose">
+<default_type>real</default_type>
+<description lang="de_DE">Halcon pose</description>
+<multivalue>true</multivalue>
+<sem_type>pose</sem_type>
+<type_list>
+<item>integer</item>
+<item>real</item>
+</type_list>
+</parameter>
+</parameters>
+</docu>
+</procedure>
+</hdevelop>

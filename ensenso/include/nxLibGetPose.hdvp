@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.1" halcon_version="12.0">
+<procedure name="nxLibGetPose">
+<interface>
+<ic>
+<par name="Handle" base_type="ctrl" dimension="0"/>
+<par name="ItemPath" base_type="ctrl" dimension="0"/>
+</ic>
+<oc>
+<par name="Pose" base_type="ctrl" dimension="0"/>
+</oc>
+</interface>
+<body>
+<c>*Read rotation data</c>
+<l>get_framegrabber_param (Handle, ItemPath + '/Rotation/Angle', angle)</l>
+<l>get_framegrabber_param (Handle, ItemPath + '/Rotation/Axis/\\0', axisX)</l>
+<l>get_framegrabber_param (Handle, ItemPath + '/Rotation/Axis/\\1', axisY)</l>
+<l>get_framegrabber_param (Handle, ItemPath + '/Rotation/Axis/\\2', axisZ)</l>
+<c></c>
+<c>*Read translation data</c>
+<l>get_framegrabber_param (Handle, ItemPath + '/Translation/\\0', transX)</l>
+<l>get_framegrabber_param (Handle, ItemPath + '/Translation/\\1', transY)</l>
+<l>get_framegrabber_param (Handle, ItemPath + '/Translation/\\2', transZ)</l>
+<c></c>
+<c>*Make Halcon pose</c>
+<l>axis_angle_to_quat(axisX,axisY,axisZ,angle,q)</l>
+<l>quat_to_pose(q, p)</l>
+<l>p[0] := transX</l>
+<l>p[1] := transY</l>
+<l>p[2] := transZ</l>
+<l>Pose := p</l>
+<c></c>
+<l>return ()</l>
+</body>
+<docu id="nxLibGetPose">
+<short lang="de_DE">Reads a given transformation node and converts the axis angle representation into a Halcon pose</short>
+<parameters>
+<parameter id="Handle">
+<default_type>integer</default_type>
+<description lang="de_DE">Framegrabber handle</description>
+<mixed_type>false</mixed_type>
+<multivalue>false</multivalue>
+<sem_type>framegrabber</sem_type>
+<type_list>
+<item>integer</item>
+</type_list>
+</parameter>
+<parameter id="ItemPath">
+<default_type>string</default_type>
+<description lang="de_DE">Relative path to transformation item</description>
+<multivalue>false</multivalue>
+<sem_type>string</sem_type>
+<type_list>
+<item>string</item>
+</type_list>
+</parameter>
+<parameter id="Pose">
+<default_type>real</default_type>
+<description lang="de_DE">Halcon pose</description>
+<multivalue>true</multivalue>
+<sem_type>pose</sem_type>
+<type_list>
+<item>integer</item>
+<item>real</item>
+</type_list>
+</parameter>
+</parameters>
+</docu>
+</procedure>
+</hdevelop>
