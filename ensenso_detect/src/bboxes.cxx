@@ -1,9 +1,10 @@
 #include <iostream>
 #include <typeinfo>
 
-#include "opencv2/highgui.hpp"
-#include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#//include "opencv2/imgcodecs.hpp"
+#include "opencv2/opencv.hpp"
 
 #include <ensenso_detect/bboxes.h>
 
