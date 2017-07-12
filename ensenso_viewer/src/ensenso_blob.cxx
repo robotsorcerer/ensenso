@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cmath>
 #include "opencv2/opencv.hpp"
+
 //#include "getBlobsContour.cpp"
 
 #include <ros/ros.h>
@@ -190,7 +191,7 @@ private:
     pcl::fromPCLPointCloud2(pcl_pc, pcl_cloud);
   }
 
-  void saveCloudAndImage(const PointCloudT& cloud, const cv::Mat& image)
+  void saveCloudAndImage(const PointCloudT& clloud, const cv::Mat& image)
   {
     auto paths = pathfinder::getCurrentPath();
     boost::filesystem::path pwd = std::get<0>(paths);
@@ -202,11 +203,11 @@ private:
     oss.str("");
     oss << counter;
     const std::string baseName = oss.str();
-    const std::string cloud_id = "face_" + baseName + "_cloud.pcd";
-    const std::string imageName = "face_" + baseName + "_image.jpg";
+    const std::string cloud_id = "contour_" + baseName + "_cloud.pcd";
+    const std::string imageName = "contour_" + baseName + "_image.jpg";
 
-    ROS_INFO_STREAM("saving cloud: " << cloudName);
-    writer.writeBinary(cloud_id, cloud);
+    ROS_INFO_STREAM("saving cloud: " << cloud_id);
+    writer.writeBinary(cloud_id, clloud);
     ROS_INFO_STREAM("saving image: " << imageName);
     cv::imwrite(imageName, image, params);
 
@@ -219,15 +220,17 @@ private:
     cv::Mat ir;
     cv::Mat dst;
     PointCloudT cloud;
+    PointCloudT newCloud;
     PointCloudT blob;
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
-    cv::resizeWindow(windowName, 640, 480) ;
+    cv::resizeWindow(windowName, 1280, 1080) ;
     cv::SimpleBlobDetector::Params params;
     params.minArea = 5000;
     params.maxArea = INT_MAX;
     cv::SimpleBlobDetector detector(params);
     cv::namedWindow("blur", cv::WINDOW_NORMAL);
-    cv::resizeWindow("blur", 640, 480) ;
+    cv::resizeWindow("blur", 1280, 1080) ;
+    ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso_viewer/contour_cloud", 5);
 
     for(; running && ros::ok();)
     {
@@ -239,12 +242,10 @@ private:
         updateImage = false;
 
         cv::medianBlur(ir, dst, 17);
-/*
-      std::vector<cv::KeyPoint> keypoints;
-      std::vector<cv::KeyPoint> contours;
-      BlobDetector detector = new BlobDetector();
-      detector.detect(dst, keypoints, contours);
 
+        std::vector<cv::KeyPoint> kp;
+        detector.detect(dst, kp);
+        drawKeypoints(dst, kp, ir, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
 
 
     cv::Mat grayscaleImage;
@@ -326,13 +327,13 @@ private:
 
         if (true)
         {
-            if (binaryImage.at<uchar> (cv::cvRound(center.location.y), cv::cvRound(center.location.x)) != 0)
+            if (bImage.at<uchar> (cvRound(center.location.y), cvRound(center.location.x)) != 0)
                 continue;
         }
 
         //compute blob radius
         {
-            vector<double> dists;
+            std::vector<double> dists;
             for (size_t pointIdx = 0; pointIdx < contours[contourIdx].size(); pointIdx++)
             {
                 cv::Point2d pt = contours[contourIdx][pointIdx];
@@ -342,50 +343,92 @@ private:
             center.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
         }
 
-        newContours.push_back(countours[contourIdx]);
+        newContours.push_back(contours[contourIdx]);
 
 }
 
 
 
+   cloud = this->cloud;
 
-
-
-
-
-
-/*
-  
     //Draw the contours
     cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
-    cv::Scalar colors[3];
-    colors[0] = cv::Scalar(255, 0, 0);
-    colors[1] = cv::Scalar(0, 255, 0);
-    colors[2] = cv::Scalar(0, 0, 255);
-    for (size_t idx = 0; idx < contours.size(); idx++) {
-        cv::drawContours(dst, newContours, idx, colors[idx % 3]);
+    int j = 0;
+    for (size_t idx = 0; idx < newContours.size(); idx++) {
+        cv::drawContours(contourImage, newContours, idx, cv::Scalar(0, 0, 255), CV_FILLED);
     }
 
-    
+    PointT newpoint;
+
+    std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> data = cloud.points;
+    int row;
+    int col;
+
+
+    for (size_t i = 0; i < data.size(); ++i){
+      row++;
+      if(i % 1280 == 0){
+        row = 0;
+        col++;
+      }
+    //  std::cout << i << std::endl;
+      if(row < contourImage.rows && col < contourImage.cols && newContours.size() > 0){
+      cv::Vec3b color = contourImage.at<cv::Vec3b>(cv::Point(row, col));
+      //ROS_INFO("PBS");
+
+      if(color[2] == 255){
+
+        newCloud.points.resize(j + 1);
+        newCloud.points[j] = data[i];
+        j++;
+        std::cout << newCloud.points.size() << std::endl;
+      }
+    }
+
+    }
+
+
 
     //   detector.detect(dst, keypoints);
         //std::vector<cv::Point> contours = detector.getContours();
-        for (auto & kp : keypoints) {
+  /*      for (auto & kp : keypoints) {
           std::vector<int> index;
           index[0] = kp.pt.x - kp.size;
           index[1] = kp.pt.x + kp.size;
           index[2] = kp.pt.y - kp.size;
           index[3] = kp.pt.y + kp.size;
           blob = PointCloudT(cloud, index);
-        }        
+        }
 
+*/
+
+sensor_msgs::PointCloud2 pcl2_msg;
+pcl::toROSMsg(newCloud, pcl2_msg);
+pcl2_msg.header.stamp = ros::Time::now();
+pcl2_msg.header.frame_id = "contour_cloud";
+pclPub.publish(pcl2_msg);
 
         cv::imshow(windowName, ir);
-        cv::imshow("blur", dst);
-      }
-      */
-    }
+        cv::imshow("blur", contourImage);
 
+        int key = cv::waitKey(1);
+        switch(key & 0xFF)
+        {
+          case 27:
+          case 'q':
+            running = false;
+            break;
+          case ' ':
+          case 's':
+            saveCloudAndImage(newCloud, ir);
+            save = true;
+            break;
+        }
+      }
+      }
+
+
+/*
       int key = cv::waitKey(1);
       switch(key & 0xFF)
       {
@@ -395,11 +438,11 @@ private:
           break;
         case ' ':
         case 's':
-          saveCloudAndImage(cloud, ir);
+          saveCloudAndImage(newCloud, ir);
           save = true;
           break;
       }
-    }
+    }*/
     cv::destroyAllWindows();
     cv::waitKey(100);
   }
@@ -473,7 +516,7 @@ private:
       if(save)
       {
         save = false;
-        saveCloudAndImage(*cloud_ptr, ir);
+      //  saveCloudAndImage(*cloud_ptr, ir);
       }
       viewer->spinOnce(10);
     }
