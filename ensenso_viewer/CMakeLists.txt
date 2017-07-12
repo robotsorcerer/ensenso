@@ -51,6 +51,7 @@ add_definitions(${PCL_DEFINITIONS})
 
 ## Declare executable source files
 set(viewer_files src/ensenso_viewer.cxx)
+set(blob_files src/ensenso_blob.cxx)
 
 catkin_package(
 	INCLUDE_DIRS include
@@ -60,7 +61,12 @@ catkin_package(
 
 ## Declare a C++ executable
 add_executable(ensenso_viewer  ${viewer_files})
+add_executable(ensenso_blob  ${blob_files})
 
 target_link_libraries(ensenso_viewer
+	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
+)
+
+target_link_libraries(ensenso_blob
 	${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl
 )
