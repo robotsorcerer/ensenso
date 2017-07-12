@@ -40,7 +40,7 @@
 //
 //M*/
 
-#include "/home/servicelab/Desktop/opencv-2.4.8/modules/features2d/src/precomp.hpp"
+#include "/home/servicelab/Desktop/Desktop/opencv-2.4.8/modules/features2d/src/precomp.hpp"
 #include <iterator>
 
 //#define DEBUG_BLOB_DETECTOR
@@ -374,7 +374,7 @@ void BlobDetector::getBlobContours(const cv::Mat& image, std::vector<cv::KeyPoin
     Mat grayscaleImage;
     if (image.channels() == 3)
         cvtColor(image, grayscaleImage, CV_BGR2GRAY);
-    else 
+    else
         grayscaleImage = image;
 
     vector < vector<Center> > centers;
@@ -563,4 +563,3 @@ void BlobDetector::findBlob(const cv::Mat &image, const cv::Mat &binaryImage, ve
     //  waitKey();
 #endif
 }
-
