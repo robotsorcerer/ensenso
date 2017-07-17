@@ -72,22 +72,6 @@ private:
 
   boost::shared_ptr<visualizer> viz;
 
-	// Parameters needed by the range image object:
-	// Angular resolution is the angular distance between pixels.
-	// Kinect: 57° horizontal FOV, 43° vertical FOV, 640x480 (chosen here).
-	// Xtion: 58° horizontal FOV, 45° vertical FOV, 640x480.
-	float angularResolutionX = (float)(57.0f / 640.0f * (M_PI / 180.0f));
-	float angularResolutionY = (float)(43.0f / 480.0f * (M_PI / 180.0f));
-	// Maximum horizontal and vertical angles. For example, for a full panoramic scan,
-	// the first would be 360º. Choosing values that adjust to the real sensor will
-	// decrease the time it takes, but don't worry. If the values are bigger than
-	// the real ones, the image will be automatically cropped to discard empty zones.
-	float maxAngleX = (float)(60.0f * (M_PI / 180.0f));
-	float maxAngleY = (float)(50.0f * (M_PI / 180.0f));
-  // Range image object.
-  boost::shared_ptr<pcl::RangeImage> range_image_ptr;
-  pcl::RangeImage rangeImage;
-
 public:
   //constructor
   Receiver()
@@ -259,13 +243,7 @@ private:
     viewer = boost::shared_ptr<pcl_viz> (new pcl_viz);
     viewer= viz->createViewer();
 
-    // PointCloudT cloud  = this->cloud;
     PointCloudT::Ptr cloud_ptr (&this->cloud);
-
-    // Visualize the image.
-    // range_image_ptr = boost::shared_ptr<pcl::RangeImage> (new pcl::RangeImage);
-    // pcl::RangeImage& range_image = *range_image_ptr;
-    // pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> range_color_handler (range_image_ptr, 225, 155, 155);
 
     //do range image
     Eigen::Affine3f sensorPose = Eigen::Affine3f(Eigen::Translation3f(cloud_ptr->sensor_origin_[0],
@@ -273,24 +251,9 @@ private:
 								 cloud_ptr->sensor_origin_[2])) *
 								 Eigen::Affine3f(cloud_ptr->sensor_orientation_);
 
-    // Noise level. If greater than 0, values of neighboring points will be averaged.
-   	// This would set the search radius (e.g., 0.03 == 3cm).
-   	float noiseLevel = 0.0f;
-   	// Minimum range. If set, any point closer to the sensor than this will be ignored.
-   	float minimumRange = 0.0f;
-   	// Border size. If greater than 0, a border of "unobserved" points will be left
-   	// in the image when it is cropped.
-   	int borderSize = 1;
-
-    // range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
-		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
-		// 							noiseLevel, minimumRange, borderSize);
-
-
-    pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 255, 150, 155);
+    pcl::visualization::PointCloudColorHandlerCustom<PointT> color_handler (cloud_ptr, 250, 250, 250);
     cv::Mat ir = this->ir;
     viewer->addPointCloud(cloud_ptr, color_handler, cloudName);
-    // setViewerPose(*viewer, range_image.getTransformationToWorldSystem());
 
     for(; running && ros::ok() ;)
     {
@@ -299,13 +262,6 @@ private:
       {
         std::lock_guard<std::mutex> lock(mutex);
         updateCloud = false;
-
-        // ROS_INFO_STREAM(" width: " << cloud_ptr->width << " | height: " << cloud_ptr->height);
-
-        // sensorPose = viewer->getViewerPose();
-        // range_image.createFromPointCloud(*cloud_ptr, angularResolutionX, angularResolutionY,
-    		// 							maxAngleX, maxAngleY, sensorPose, pcl::RangeImage::CAMERA_FRAME,
-    		// 							noiseLevel, minimumRange, borderSize);
         viewer->updatePointCloud(cloud_ptr, color_handler, cloudName);
       }
       if(save)

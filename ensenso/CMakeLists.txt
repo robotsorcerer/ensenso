@@ -38,18 +38,18 @@ find_package(catkin REQUIRED COMPONENTS
   roslib
   rostime
 	PCL
+  #gen_msg
   message_filters
   cv_bridge
   tf
   tf_conversions
   image_transport
-  roslib
   std_msgs
 )
 
 find_package(Boost COMPONENTS filesystem system serialization
 thread REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 2 REQUIRED)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/opt/ensenso/cmake")
 find_package(Ensenso REQUIRED)
 # find_package(Ensenso)
@@ -57,12 +57,10 @@ find_package(Ensenso REQUIRED)
 add_message_files(
 FILES
 HeadPose.msg
+ValveControl.msg
 )
 
-generate_messages(
-DEPENDENCIES
-std_msgs
-)
+generate_messages(DEPENDENCIES std_msgs)
 
 catkin_package(
 	INCLUDE_DIRS include
@@ -86,39 +84,35 @@ include_directories(
 
 add_definitions(${EIGEN_DEFINITIONS})
 
-message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
+# message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
 
-include_directories(${ENSENSO_INCLUDE_DIRS}
-				 ${PCL_INCLUDE_DIRS}
-				  )
+include_directories(${ENSENSO_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
 ## Declare executable source files
-set(bridge_files src/ensenso_bridge.cxx
-              src/pathfinder.cxx)
+set(bridge_files src/ensenso_bridge.cxx              src/pathfinder.cxx)
 
 add_library(pathfinder src/pathfinder.cxx src/factory_functions.cxx)
 add_library(savgol src/savgol.cxx)
 add_library(boostsender src/boost_sender.cxx)
 
-add_dependencies(boostsender ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(pathfinder boostsender
-${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
-)
+
+target_link_libraries(boostsender ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})
+add_dependencies(boostsender ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
+
+target_link_libraries(pathfinder ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY})
 
 ## Declare a C++ executable
 add_executable(ensenso_bridge ${bridge_files})
 
-install(TARGETS savgol pathfinder boostsender
-      ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-      LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-      RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
+# install(TARGETS savgol pathfinder boostsender
+#       ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+#       LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+#       RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
 
-install(DIRECTORY include/${PROJECT_NAME}/
-      DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
+# install(DIRECTORY include/${PROJECT_NAME}/
+#       DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(ensenso_bridge
-${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
-)
+target_link_libraries(ensenso_bridge ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})

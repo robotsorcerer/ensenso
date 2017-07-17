@@ -34,7 +34,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Boost COMPONENTS filesystem system serialization
 thread REQUIRED)
 
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 2 REQUIRED)
 
 include_directories(
   ${Boost_INCLUDE_DIRS}

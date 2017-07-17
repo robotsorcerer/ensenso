@@ -74,6 +74,6 @@ endmacro()
 # endmacro()
 
 # add_exec(bboxes)
-  add_executable(bboxes src/bboxes.cxx src/window_manager.cpp)
-  target_link_libraries(bboxes ${catkin_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl)
+#  add_executable(bboxes src/bboxes.cxx src/window_manager.cpp)
+#  target_link_libraries(bboxes ${catkin_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY} -lm -ldl)
 

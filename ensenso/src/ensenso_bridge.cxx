@@ -157,10 +157,26 @@ void initPublishers()
   rightImagePub = it.advertise("/ensenso/right/image", 10);
 
   pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso/cloud", 10);
-
   leftInfoPub = nh.advertise<sensor_msgs::CameraInfo>("/ensenso/left/cam/info", 2);
   rightInfoPub = nh.advertise<sensor_msgs::CameraInfo>("/ensenso/right/cam/info", 2);
 }
+
+void readAndLoadParams(); //forward declaration
+
+bool initEnsensoParams()
+{
+  ROS_INFO("%s", "Initializing ensenso camera parameters");
+  ensenso_ptr.reset (new pcl::EnsensoGrabber);
+  ensenso_ptr->openDevice(0);
+  ensenso_ptr->openTcpPort();
+  ensenso_ptr->enumDevices();
+  camera_ = ensenso_ptr->camera_;
+  ensenso_ptr->configureCapture();
+  ROS_INFO("Loading json params");
+  readAndLoadParams();
+  return true;
+}
+
 
 void readAndLoadParams()
 {
@@ -172,9 +188,6 @@ void readAndLoadParams()
   ss << data_dir.c_str() << "/data/ensenso_calib_params.json";
   std::string settingsFile = ss.str();
 
-  ROS_INFO_STREAM("settingsFile: " << settingsFile);
-  ROS_INFO_STREAM("data_dir: " << data_dir.c_str());
-
   ROS_INFO_STREAM("Loading settings file: " << settingsFile);
   std::ifstream file(settingsFile);
 
@@ -184,20 +197,20 @@ void readAndLoadParams()
      std::stringstream buffer;
      buffer << file.rdbuf();
      std::string const& fileContent = buffer.str();
+     bool writeableNodesOnly  = true; // silently skips;
 
      NxLibItem tmp("/tmp");
      tmp.setJson(fileContent);
      if (tmp[itmParameters].exists())
      {
         camera_[itmParameters].setJson(tmp[itmParameters].asJson(), true);
-        // writeableNodesOnly = true silently skips
         // read-only nodes instead of failing when
         // encountering a read-only node
         ROS_INFO("Successfully read camera settings file");
      }
      else
      {
-        camera_[itmParameters].setJson(tmp.asJson(), true); // with writebleNodesOnly = true, see comment above
+        camera_[itmParameters].setJson(tmp.asJson(), writeableNodesOnly); // with writebleNodesOnly = true, see comment above
      }
      // ROS_INFO_STREAM("camera_[itmParameters] \n" <<
      //                  camera_[itmParameters].setJson(tmp.asJson(), true));
@@ -207,20 +220,6 @@ void readAndLoadParams()
      ROS_INFO("Could not parse json params file");
   }
 
-}
-
-bool initEnsensoParams()
-{
-  ROS_INFO("%s", "Initializing ensenso camera parameters");
-  ensenso_ptr.reset (new pcl::EnsensoGrabber);
-  ensenso_ptr->openTcpPort();
-  ensenso_ptr->openDevice();
-  ensenso_ptr->enumDevices();
-  camera_ = ensenso_ptr->camera_;
-  ensenso_ptr->configureCapture();
-  ROS_INFO("Loading json params");
-  readAndLoadParams();
-  return true;
 }
 
 void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::ImagePtr& msg, \
@@ -363,11 +362,12 @@ int main (int argc, char** argv)
 
   initEnsensoParams();
 
-  boost::function<void(const PointCloudT::Ptr&, const boost::shared_ptr<PairOfImages>&)> f \
-                                = boost::bind(&callback, _1, _2);
-
-  ensenso_ptr->start ();
+  boost::function<void (const boost::shared_ptr<PointCloudT>&,
+                        const boost::shared_ptr<PairOfImages>&)> f = boost::bind(&callback, _1, _2);
+  // boost::function<void(const PointCloudT::Ptr&, const boost::shared_ptr<PairOfImages>&)> f \
+  //                               = boost::bind(&callback, _1, _2);
   ensenso_ptr->registerCallback (f);
+  ensenso_ptr->start ();
 
   ros::spin();
 

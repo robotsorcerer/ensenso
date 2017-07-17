@@ -28,7 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Boost COMPONENTS filesystem system serialization
 thread REQUIRED)
 
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 2 REQUIRED)
 
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 
