@@ -92,7 +92,6 @@ private:
 	Eigen::Vector4d headHeaight, bgdCentroid;
 	Eigen::Vector3d headOrientation;
 	Eigen::Matrix4d transformation_matrix;
-	ensenso::HeadPose headPose;
 	double x, y, z, \
 	x_sq, y_sq, z_sq, \
 	roll, pitch, yaw;  //used to compute spherical coordinates
@@ -351,9 +350,9 @@ public:
 		pose_.position.x = x; //std::fabs(x);
 		pose_.position.y = y; //std::fabs(y);
 		pose_.position.z = z; //std::fabs(z);
-		pose_.pitch = polar;  //negate this to make pitch +ve
 		pose_.orientation.x = azimuth;
 		pose_.orientation.y = roll; //M_PI + polar;
+		pose_.orientation.z = polar;  //negate this to make pitch +ve
 		//convert the angles to degrees
 		generic::rad2deg(pose_.position.z);
 		generic::rad2deg(pose_.orientation.x);

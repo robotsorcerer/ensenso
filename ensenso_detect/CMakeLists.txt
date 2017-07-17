@@ -6,7 +6,7 @@ project(ensenso_detect)
 add_definitions(-std=c++11)
 
 #ensenso only works with pcl version 1.8.0. Set this to the path where your pclConfig.cmake lives
-set(PCL_DIR      /usr/local/share/pcl-1.8/)
+set(PCL_DIR /usr/local/share/pcl-1.8/)
 
 find_package(PkgConfig)
 pkg_search_module(Eigen3 REQUIRED eigen3)
@@ -21,10 +21,8 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
 )
 
-find_package(Boost COMPONENTS filesystem system serialization
-thread REQUIRED)
-
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 2 REQUIRED)
+find_package(Boost COMPONENTS filesystem system serialization thread REQUIRED)
 
 set(ensenso_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include)
 
@@ -39,9 +37,7 @@ add_definitions(${EIGEN_DEFINITIONS})
 
 message(STATUS "INCLUDE_DIRS: " ${ensenso_INCLUDE_DIRS})
 
-include_directories(${ENSENSO_INCLUDE_DIRS}
-					 ${PCL_INCLUDE_DIRS}
-						)
+include_directories(${ENSENSO_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
@@ -50,8 +46,8 @@ set(detect_files src/ensenso_detect.cxx)
 
 catkin_package(
 	INCLUDE_DIRS include
-	 CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
-	 LIBRARIES pathfinder savgol boostsender cv_tools
+	CATKIN_DEPENDS roscpp rospy sensor_msgs message_filters cv_bridge
+	LIBRARIES pathfinder savgol boostsender cv_tools
 )
 
 # add_dependencies(bboxes ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
