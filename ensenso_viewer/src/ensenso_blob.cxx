@@ -104,7 +104,7 @@ public:
   : updateCloud(false), updateImage(false), save(false), counter(0),
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"),
   hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2),
-  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"),
+  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/right/image"),
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),
   sync(syncPolicy(10), subCloud, subImageIr)
   {
@@ -203,8 +203,8 @@ private:
     oss.str("");
     oss << counter;
     const std::string baseName = oss.str();
-    const std::string cloud_id = "contour_" + baseName + "_cloud.pcd";
-    const std::string imageName = "contour_" + baseName + "_image.jpg";
+    const std::string cloud_id = "outside_" + baseName + "_cloud.pcd";
+    const std::string imageName = "outside_" + baseName + "_image.jpg";
 
     ROS_INFO_STREAM("saving cloud: " << cloud_id);
     writer.writeBinary(cloud_id, clloud);
@@ -245,6 +245,7 @@ private:
 
         std::vector<cv::KeyPoint> kp;
         detector.detect(dst, kp);
+        cv::Mat kpImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
         drawKeypoints(dst, kp, ir, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
 
 
@@ -272,7 +273,7 @@ private:
         if (true)
         {
             double area = moms.m00;
-            if (area < 5000 || area >= std::numeric_limits<float>::max())
+            if (area < 1000 || area >= std::numeric_limits<float>::max())
                 continue;
         }
 
@@ -344,8 +345,17 @@ private:
         }
 
         newContours.push_back(contours[contourIdx]);
+        for(size_t i = 0; i < kp.size(); ++i){
+          cv::circle( kpImage,
+                   center.location, //+ *(new cv::Point2d(kp[i].size, 0)),
+                   kp[i].size,
+                   cv::Scalar( 0, 0, 255 ),
+                   -1,
+                   8 );
+                 }
+    }
 
-}
+
 
 
 
@@ -372,8 +382,8 @@ private:
         col++;
       }
     //  std::cout << i << std::endl;
-      if(row < contourImage.rows && col < contourImage.cols && newContours.size() > 0){
-      cv::Vec3b color = contourImage.at<cv::Vec3b>(cv::Point(row, col));
+      if(row < kpImage.rows && col < kpImage.cols){// && newContours.size() > 0){
+      cv::Vec3b color = kpImage.at<cv::Vec3b>(cv::Point(row, col));
       //ROS_INFO("PBS");
 
       if(color[2] == 255){
@@ -381,7 +391,7 @@ private:
         newCloud.points.resize(j + 1);
         newCloud.points[j] = data[i];
         j++;
-        std::cout << newCloud.points.size() << std::endl;
+      //  std::cout << newCloud.points.size() << std::endl;
       }
     }
 
