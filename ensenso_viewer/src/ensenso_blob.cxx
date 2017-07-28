@@ -64,7 +64,7 @@ private:
   ros::NodeHandle nh;
   std::mutex mutex;
   cv::Mat ir;
-  cv::Mat il;
+  cv::Mat ir_r; //The right stereo camera image
   std::string windowName;
   const std::string basetopic;
   std::string subNameDepth;
@@ -168,7 +168,7 @@ private:
     cv::Rect rightROI( leftROI.width, 0, im.cols - leftROI.width, im.rows);
 
     this->ir = cv::Mat(im, leftROI).clone();
-    this->il = cv::Mat(im, rightROI).clone();
+    this->ir_r = cv::Mat(im, rightROI).clone();
     this->cloud = cloud;
     updateImage = true;
     updateCloud = true;
@@ -225,19 +225,23 @@ private:
 
   void imageDisp()
   {
+    //Matrices for the raw infrared and processed images
     cv::Mat ir;
-    cv::Mat dst;
+    cv::Mat proc_ir;
 
-
-
+    //Windows in which images are displayed
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(windowName, 1280, 1024) ;
+    cv::namedWindow("blur", cv::WINDOW_NORMAL);
+    cv::resizeWindow("blur", 1280, 1024) ;
+
+    //Blob detector
     cv::SimpleBlobDetector::Params params;
     params.minArea = 5000;
     params.maxArea = INT_MAX;
     cv::SimpleBlobDetector detector(params);
-    cv::namedWindow("blur", cv::WINDOW_NORMAL);
-    cv::resizeWindow("blur", 1280, 1024) ;
+
+    //Initialize publisher for the blob's pointcloud
     ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso_viewer/contour_cloud", 5);
 
     for(; running && ros::ok();)
@@ -248,55 +252,64 @@ private:
         ir = this->ir;
         updateImage = false;
 
-        cv::medianBlur(ir, dst, 17);
-        std::vector<cv::KeyPoint> kpc;
+        cv::medianBlur(ir, proc_ir, 17);
+
+        //Keypoints of detected blobs
         std::vector<cv::KeyPoint> kp;
-        detector.detect(dst, kp);
-        detector.detect(il, kpc);
-        cv::Mat kpImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
-        drawKeypoints(dst, kp, ir, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
+        detector.detect(proc_ir, kp);
 
+        //Draws onto the infrared image for ease of tracking
+        cv::Mat kpImage(proc_ir.size(), CV_8UC3, cv::Scalar(0,0,0));
+        drawKeypoints(proc_ir, kp, ir, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
 
-    cv::Mat grayscaleImage;
-    if (dst.channels() == 3)
-        cvtColor(dst, grayscaleImage, CV_BGR2GRAY);
-    else
-      grayscaleImage = dst.clone();
+        //In preparation for contour detection and filtering
+        cv::Mat grayscaleImage;
+        if (proc_ir.channels() == 3)
+          cvtColor(proc_ir, grayscaleImage, CV_BGR2GRAY);
+        else
+          grayscaleImage = proc_ir.clone();
 
-    cv::Mat bImage;
-    cv::threshold(grayscaleImage, bImage, 128, 255, CV_THRESH_BINARY);
+        cv::Mat bImage;
+        cv::threshold(grayscaleImage, bImage, 128, 255, CV_THRESH_BINARY);
 
-    //Find the contours. Use the contourOutput Mat so the original image doesn't get overwritten
-    std::vector<std::vector<cv::Point> > contours;
-    cv::Mat contourOutput = bImage.clone();
-    cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE );
-cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
-    std::vector<std::vector<cv::Point> > newContours;
+        //Stores all contours found
+        std::vector<std::vector<cv::Point> > contours;
+        cv::Mat contourOutput = bImage.clone();
+        cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE );
 
-    for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
-    {
+        //The filtered contours and where they will be drawn
+        cv::Mat contourImage(proc_ir.size(), CV_8UC3, cv::Scalar(0,0,0));
+        std::vector<std::vector<cv::Point> > newContours;
 
-        Center center;
-        center.confidence = 1;
-        cv::Moments moms = moments(cv::Mat(contours[contourIdx]));
-        if (true)
+        //Filters contours to pick out the wound shape
+        for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
         {
+
+          Center center;
+          center.confidence = 1;
+          cv::Moments moms = moments(cv::Mat(contours[contourIdx]));
+
+          //Filters by area
+          if (true)
+          {
             double area = moms.m00;
             if (area < 1000 || area >= std::numeric_limits<float>::max())
                 continue;
-        }
+          }
 
-        if (false)
-        {
+          //Filters by circularity
+          if (false)
+          {
             double area = moms.m00;
             double perimeter = cv::arcLength(cv::Mat(contours[contourIdx]), true);
             double ratio = 4 * CV_PI * area / (perimeter * perimeter);
             if (ratio < 0.8f || ratio >= std::numeric_limits<float>::max())
                 continue;
-        }
+          }
 
-        if (false)
-        {
+          //Filters by inertia
+          if (false)
+          {
             double denominator = sqrt(pow(2 * moms.mu11, 2) + pow(moms.mu20 - moms.mu02, 2));
             const double eps = 1e-2;
             double ratio;
@@ -320,10 +333,11 @@ cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
                 continue;
 
             center.confidence = ratio * ratio;
-        }
+          }
 
-        if (true)
-        {
+          //Filters by convexity
+          if (true)
+          {
             std::vector < cv::Point > hull;
             cv::convexHull(cv::Mat(contours[contourIdx]), hull);
             double area = cv::contourArea(cv::Mat(contours[contourIdx]));
@@ -331,15 +345,16 @@ cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
             double ratio = area / hullArea;
             if (ratio < 0.85f || ratio >= std::numeric_limits<float>::max())
                 continue;
-        }
+          }
 
-        center.location = cv::Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
+          center.location = cv::Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
-        if (false)
-        {
+          //Filters by color
+          if (false)
+          {
             if (bImage.at<uchar> (cvRound(center.location.y), cvRound(center.location.x)) != 0)
                 continue;
-        }
+          }
 
         //compute blob radius
         {
@@ -356,43 +371,47 @@ cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
 
         newContours.push_back(contours[contourIdx]);
 
-
     }
 
-    for(size_t i = 0; i < kp.size(); ++i){
-      cv::circle( kpImage,
-               kp[i].pt, //- *(new cv::Point2f((kp[i].pt.x - kpc[i].pt.x)/2, 0)),// + *(new cv::Point2d(0, 0)),
+    //Draws the region from which the pointcloud should be pulled.
+    for(size_t i = 0; i < kp.size(); ++i)
+    {
+      cv::circle( contourImage,
+               kp[i].pt,
                kp[i].size * 1.5,
-               cv::Scalar( 0, 0, 255 ),
+               cv::Scalar( 0, 255, 0 ),
                -1,
                8 );
 
+      cv::circle( ir,
+                  kp[i].pt,
+                  kp[i].size * 1.5,
+                  cv::Scalar( 0, 255, 0 ),
+                  5,
+                  8 );
+    }
 
-             cv::circle( ir,
-                      kp[i].pt, //- *(new cv::Point2f((kp[i].pt.x - kpc[i].pt.x)/2, 0)),// + *(new cv::Point2d(0, 0)),
-                      kp[i].size * 1.5,
-                      cv::Scalar( 0, 255, 0 ),
-                      5,
-                      8 );
-                    }
-
-//std::cout << "here" << std::endl;
-//  std::cout << cloud.points.size() << std::endl;
-//std::cout << newContours.size() << std::endl;
-  for (size_t idx = 0; idx < newContours.size(); idx++) {
+    //Draws all detected contours, after filter, on the image
+    for (size_t idx = 0; idx < newContours.size(); idx++)
+    {
       cv::drawContours(contourImage, newContours, idx, cv::Scalar(0, 0, 255), CV_FILLED);
-  }
-    //Draw the contours
+    }
 
-int j = 0;
+    //Pull pointcloud data for iteration
     cloud = this->cloud;
     std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> data = cloud.points;
+
+    int cc = 1;
+    int rc = 1;
     int row = 0;
     int col = 0;
 
-    PointCloudT newCloud;
-    newCloud.points.resize(1);
+    //Clouds for storing pulled data
+    PointCloudT contourCloud;
+    contourCloud.points.resize(1);
 
+    PointCloudT regionCloud;
+    regionCloud.points.resize(1);
 
     for (size_t i = 0; i < data.size(); ++i){
       row++;
@@ -400,69 +419,61 @@ int j = 0;
         row = 0;
         col++;
       }
-    //  std::cout << i << std::endl;
-      if(row < kpImage.rows && col < kpImage.cols){// && newContours.size() > 0){
-      cv::Vec3b color = kpImage.at<cv::Vec3b>(cv::Point(row, col));
-      //ROS_INFO("PBS");
 
-      if(color[2] == 255){
+      if(row < contourImage.rows && col < contourImage.cols)
+      {
+        cv::Vec3b color = contourImage.at<cv::Vec3b>(cv::Point(row, col));
 
-        newCloud.points.resize(j + 1);
-        newCloud.points[j] = data[i];
-        j++;
+        if(color[2] == 255)
+        {
+          contourCloud.points.resize(cc + 1);
+          contourCloud.points[cc] = data[i];
+          cc++;
+
+          regionCloud.points.resize(rc + 1);
+          regionCloud.points[rc] = data[i];
+          rc++;
+        }
+        else if(color[1] == 255){
+          regionCloud.points.resize(rc + 1);
+          regionCloud.points[rc] = data[i];
+          rc++;
+        }
 
       }
-
-    }
-
 
     }
 
     if(save){
-      saveCloudAndImage(newCloud, ir);
+        saveCloudAndImage(contourCloud, ir);
+        saveCloudAndImage(regionCloud, ir);
     }
 
-/*sensor_msgs::PointCloud2 pcl2_msg;
-pcl::toROSMsg(newCloud, pcl2_msg);
-pcl2_msg.header.stamp = ros::Time::now();
-pcl2_msg.header.frame_id = "contour_cloud";
-pclPub.publish(pcl2_msg);*/
+    /* Currently unused - published contourCloud to topic */
+    /*sensor_msgs::PointCloud2 pcl2_msg;
+    pcl::toROSMsg(contourCloud, pcl2_msg);
+    pcl2_msg.header.stamp = ros::Time::now();
+    pcl2_msg.header.frame_id = "contour_cloud";
+    pclPub.publish(pcl2_msg);*/
 
-        cv::imshow(windowName, ir);
-        cv::imshow("blur", kpImage);
+    cv::imshow(windowName, ir);
+    cv::imshow("Contour and Region", contourImage);
 
-        int key = cv::waitKey(1);
-        switch(key & 0xFF)
-        {
-          case 27:
-          case 'q':
-            running = false;
-            break;
-          case ' ':
-          case 's':
-          //  saveCloudAndImage(newCloud, ir);
-            save = true;
-            break;
-        }
-      }
-      }
+    int key = cv::waitKey(1);
+    switch(key & 0xFF)
+    {
+      case 27:
+      case 'q':
+        running = false;
+        break;
+      case ' ':
+      case 's':
+        save = true;
+        break;
+    }
+  }
+}
 
-
-/*
-      int key = cv::waitKey(1);
-      switch(key & 0xFF)
-      {
-        case 27:
-        case 'q':
-          running = false;
-          break;
-        case ' ':
-        case 's':
-          saveCloudAndImage(newCloud, ir);
-          save = true;
-          break;
-      }
-    }*/
     cv::destroyAllWindows();
     cv::waitKey(100);
   }
