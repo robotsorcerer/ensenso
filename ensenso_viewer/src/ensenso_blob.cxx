@@ -64,6 +64,7 @@ private:
   ros::NodeHandle nh;
   std::mutex mutex;
   cv::Mat ir;
+  cv::Mat il;
   std::string windowName;
   const std::string basetopic;
   std::string subNameDepth;
@@ -104,7 +105,7 @@ public:
   : updateCloud(false), updateImage(false), save(false), counter(0),
   cloudName("ensenso_cloud"), windowName("Ensenso images"), basetopic("/ensenso"),
   hardware_threads(std::thread::hardware_concurrency()),  spinner(hardware_threads/2),
-  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/right/image"),
+  subNameCloud(basetopic + "/cloud"), subNameIr(basetopic + "/image_combo"),
   subImageIr(nh, subNameIr, 1), subCloud(nh, subNameCloud, 1),
   sync(syncPolicy(10), subCloud, subImageIr)
   {
@@ -157,13 +158,17 @@ private:
 
   void callback(const sensor_msgs::PointCloud2ConstPtr& ensensoCloud, const sensor_msgs::ImageConstPtr& ensensoImage)
   {
-    cv::Mat ir;
+    cv::Mat im;
     PointCloudT cloud;
-    getImage(ensensoImage, ir);
+    getImage(ensensoImage, im);
     getCloud(ensensoCloud, cloud);
 
     std::lock_guard<std::mutex> lock(mutex);
-    this->ir = ir;
+    cv::Rect leftROI( 0, 0, im.cols / 2, im.rows);
+    cv::Rect rightROI( leftROI.width, 0, im.cols - leftROI.width, im.rows);
+
+    this->ir = cv::Mat(im, leftROI).clone();
+    this->il = cv::Mat(im, rightROI).clone();
     this->cloud = cloud;
     updateImage = true;
     updateCloud = true;
@@ -177,11 +182,13 @@ private:
       cv_ptr = cv_bridge::toCvShare(msgImage, sensor_msgs::image_encodings::MONO8);
     }
     catch (cv_bridge::Exception& e)
+
     {
       ROS_ERROR("cv_bridge exception: %s", e.what());
       return;
     }
     cv_ptr->image.copyTo(image);
+
   }
 
   void getCloud(const sensor_msgs::PointCloud2ConstPtr cb_cloud, PointCloudT& pcl_cloud) const
@@ -213,23 +220,24 @@ private:
 
     ROS_INFO_STREAM("saving complete!");
     ++counter;
+    save = false;
   }
 
   void imageDisp()
   {
     cv::Mat ir;
     cv::Mat dst;
-    PointCloudT cloud;
-    PointCloudT newCloud;
-    PointCloudT blob;
+
+
+
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
-    cv::resizeWindow(windowName, 1280, 1080) ;
+    cv::resizeWindow(windowName, 1280, 1024) ;
     cv::SimpleBlobDetector::Params params;
     params.minArea = 5000;
     params.maxArea = INT_MAX;
     cv::SimpleBlobDetector detector(params);
     cv::namedWindow("blur", cv::WINDOW_NORMAL);
-    cv::resizeWindow("blur", 1280, 1080) ;
+    cv::resizeWindow("blur", 1280, 1024) ;
     ros::Publisher pclPub = nh.advertise<sensor_msgs::PointCloud2>("/ensenso_viewer/contour_cloud", 5);
 
     for(; running && ros::ok();)
@@ -238,13 +246,13 @@ private:
       {
         std::lock_guard<std::mutex> lock(mutex);
         ir = this->ir;
-        cloud = this->cloud;
         updateImage = false;
 
         cv::medianBlur(ir, dst, 17);
-
+        std::vector<cv::KeyPoint> kpc;
         std::vector<cv::KeyPoint> kp;
         detector.detect(dst, kp);
+        detector.detect(il, kpc);
         cv::Mat kpImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
         drawKeypoints(dst, kp, ir, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
 
@@ -262,8 +270,9 @@ private:
     std::vector<std::vector<cv::Point> > contours;
     cv::Mat contourOutput = bImage.clone();
     cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE );
-
+cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
     std::vector<std::vector<cv::Point> > newContours;
+
     for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
     {
 
@@ -286,7 +295,7 @@ private:
                 continue;
         }
 
-        if (true)
+        if (false)
         {
             double denominator = sqrt(pow(2 * moms.mu11, 2) + pow(moms.mu20 - moms.mu02, 2));
             const double eps = 1e-2;
@@ -320,13 +329,13 @@ private:
             double area = cv::contourArea(cv::Mat(contours[contourIdx]));
             double hullArea = cv::contourArea(cv::Mat(hull));
             double ratio = area / hullArea;
-            if (ratio < 0.95f || ratio >= std::numeric_limits<float>::max())
+            if (ratio < 0.85f || ratio >= std::numeric_limits<float>::max())
                 continue;
         }
 
         center.location = cv::Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
-        if (true)
+        if (false)
         {
             if (bImage.at<uchar> (cvRound(center.location.y), cvRound(center.location.x)) != 0)
                 continue;
@@ -342,37 +351,47 @@ private:
             }
             std::sort(dists.begin(), dists.end());
             center.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
+
         }
 
         newContours.push_back(contours[contourIdx]);
-        for(size_t i = 0; i < kp.size(); ++i){
-          cv::circle( kpImage,
-                   center.location, //+ *(new cv::Point2d(kp[i].size, 0)),
-                   kp[i].size,
-                   cv::Scalar( 0, 0, 255 ),
-                   -1,
-                   8 );
-                 }
+
+
     }
 
+    for(size_t i = 0; i < kp.size(); ++i){
+      cv::circle( kpImage,
+               kp[i].pt, //- *(new cv::Point2f((kp[i].pt.x - kpc[i].pt.x)/2, 0)),// + *(new cv::Point2d(0, 0)),
+               kp[i].size * 1.5,
+               cv::Scalar( 0, 0, 255 ),
+               -1,
+               8 );
 
 
+             cv::circle( ir,
+                      kp[i].pt, //- *(new cv::Point2f((kp[i].pt.x - kpc[i].pt.x)/2, 0)),// + *(new cv::Point2d(0, 0)),
+                      kp[i].size * 1.5,
+                      cv::Scalar( 0, 255, 0 ),
+                      5,
+                      8 );
+                    }
 
-
-   cloud = this->cloud;
-
+//std::cout << "here" << std::endl;
+//  std::cout << cloud.points.size() << std::endl;
+//std::cout << newContours.size() << std::endl;
+  for (size_t idx = 0; idx < newContours.size(); idx++) {
+      cv::drawContours(contourImage, newContours, idx, cv::Scalar(0, 0, 255), CV_FILLED);
+  }
     //Draw the contours
-    cv::Mat contourImage(dst.size(), CV_8UC3, cv::Scalar(0,0,0));
-    int j = 0;
-    for (size_t idx = 0; idx < newContours.size(); idx++) {
-        cv::drawContours(contourImage, newContours, idx, cv::Scalar(0, 0, 255), CV_FILLED);
-    }
 
-    PointT newpoint;
-
+int j = 0;
+    cloud = this->cloud;
     std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>> data = cloud.points;
-    int row;
-    int col;
+    int row = 0;
+    int col = 0;
+
+    PointCloudT newCloud;
+    newCloud.points.resize(1);
 
 
     for (size_t i = 0; i < data.size(); ++i){
@@ -391,35 +410,26 @@ private:
         newCloud.points.resize(j + 1);
         newCloud.points[j] = data[i];
         j++;
-      //  std::cout << newCloud.points.size() << std::endl;
+
       }
-    }
 
     }
 
 
+    }
 
-    //   detector.detect(dst, keypoints);
-        //std::vector<cv::Point> contours = detector.getContours();
-  /*      for (auto & kp : keypoints) {
-          std::vector<int> index;
-          index[0] = kp.pt.x - kp.size;
-          index[1] = kp.pt.x + kp.size;
-          index[2] = kp.pt.y - kp.size;
-          index[3] = kp.pt.y + kp.size;
-          blob = PointCloudT(cloud, index);
-        }
+    if(save){
+      saveCloudAndImage(newCloud, ir);
+    }
 
-*/
-
-sensor_msgs::PointCloud2 pcl2_msg;
+/*sensor_msgs::PointCloud2 pcl2_msg;
 pcl::toROSMsg(newCloud, pcl2_msg);
 pcl2_msg.header.stamp = ros::Time::now();
 pcl2_msg.header.frame_id = "contour_cloud";
-pclPub.publish(pcl2_msg);
+pclPub.publish(pcl2_msg);*/
 
         cv::imshow(windowName, ir);
-        cv::imshow("blur", contourImage);
+        cv::imshow("blur", kpImage);
 
         int key = cv::waitKey(1);
         switch(key & 0xFF)
@@ -430,7 +440,7 @@ pclPub.publish(pcl2_msg);
             break;
           case ' ':
           case 's':
-            saveCloudAndImage(newCloud, ir);
+          //  saveCloudAndImage(newCloud, ir);
             save = true;
             break;
         }
@@ -525,7 +535,7 @@ pclPub.publish(pcl2_msg);
       }
       if(save)
       {
-        save = false;
+      //  save = false;
       //  saveCloudAndImage(*cloud_ptr, ir);
       }
       viewer->spinOnce(10);

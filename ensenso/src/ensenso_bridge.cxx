@@ -27,6 +27,7 @@
 #include <memory>
 #include <fstream>
 #include <algorithm>
+#include <sstream>
 
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
@@ -102,7 +103,7 @@ pcl::EnsensoGrabber::Ptr ensenso_ptr;
 sensor_msgs::PointCloud2 pcl2_msg;   //msg to be displayed in rviz
 sensor_msgs::CameraInfo left_info, right_info;
 ros::Publisher pclPub;
-image_transport::Publisher imagePub, leftImagePub, rightImagePub;
+image_transport::Publisher imagePub, leftImagePub, rightImagePub, imageCorrectionPub;
 ros::Publisher leftInfoPub, rightInfoPub;
 std::string encoding = "mono8";
 bool filter = true;
@@ -115,7 +116,7 @@ void initCaptureParams()
   const bool auto_gain = false;
   const int bining = 1; //Max. fps (3D): 10 (2x Binning: 30) and 64 disparity levels
   const float exposure = 7.1697756185335138;//0.32;
-  const bool front_light = false;
+  const bool front_light = true;
   const int gain = 1;
   const bool gain_boost = false;
   const bool hardware_gamma = false;
@@ -152,6 +153,7 @@ void initPublishers()
   ROS_INFO("%s", "Initializing Publishers");
 
   imagePub = it.advertise("/ensenso/image_combo", 10);
+  imageCorrectionPub = it.advertise("/ensenso/image_correction_combo", 10);
   leftImagePub = it.advertise("/ensenso/left/image", 10);
   rightImagePub = it.advertise("/ensenso/right/image", 10);
 
@@ -164,13 +166,18 @@ void initPublishers()
 void readAndLoadParams()
 {
   boost::filesystem::path data_dir, settingsPath;
-//  pathfinder::getDataDirectory(data_dir);
+  std::stringstream ss;
+  pathfinder::getDataDirectory(std::move(data_dir));
+  // data_dir += / "data";
+  // settingsPath = data_dir;
+  ss << data_dir.c_str() << "/data/ensenso_calib_params.json";
+  std::string settingsFile = ss.str();
 
-  settingsPath = data_dir / "settings_face_filled.json";
-  std::string settingsFile = settingsPath.string();
+  ROS_INFO_STREAM("settingsFile: " << settingsFile);
+  ROS_INFO_STREAM("data_dir: " << data_dir.c_str());
 
   ROS_INFO_STREAM("Loading settings file: " << settingsFile);
-  std::ifstream file("~/catkin_ws/src/sensors/ensenso/ensenso_calib_params.json");
+  std::ifstream file(settingsFile);
 
   if (file.is_open() && file.rdbuf())
   {
@@ -178,8 +185,6 @@ void readAndLoadParams()
      std::stringstream buffer;
      buffer << file.rdbuf();
      std::string const& fileContent = buffer.str();
-
-     // ROS_INFO_STREAM("file contents \n"  << fileContent);
 
      NxLibItem tmp("/tmp");
      tmp.setJson(fileContent);
@@ -215,12 +220,12 @@ bool initEnsensoParams()
   camera_ = ensenso_ptr->camera_;
   ensenso_ptr->configureCapture();
   ROS_INFO("Loading json params");
-  //readAndLoadParams();
+  readAndLoadParams();
   return true;
 }
 
 void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::ImagePtr& msg, \
-                sensor_msgs::ImagePtr& left_msg, sensor_msgs::ImagePtr& right_msg)
+                sensor_msgs::ImagePtr& left_msg, sensor_msgs::ImagePtr& right_msg,sensor_msgs::ImagePtr& cmsg)
 {
   /*Process Image and prepare for publishing*/
   unsigned char *l_image_array = reinterpret_cast<unsigned char *> (&images->first.data[0]);
@@ -240,20 +245,34 @@ void imagetoMsg(const boost::shared_ptr<PairOfImages>& images, sensor_msgs::Imag
   }
 
   cv::Mat im (images->first.height, images->first.width * 2, type1);
+  cv::Mat imc (images->first.height, images->first.width * 2, type1);
+
   cv::Mat left_image(images->first.height, images->first.width, type1);
   cv::Mat right_image(images->second.height, images->second.width, type2);
 
-  im.adjustROI (0, 0, 0, -0.5*images->first.width);
+  cv::hconcat(l_image, r_image, im);
+/*  im.adjustROI (0, 0, 0, -0.5*images->first.width);
   l_image.copyTo (im);
   im.adjustROI (0, 0, -0.5*images->first.width, 0.5*images->first.width);
-  r_image.copyTo (im);
+  l_image.copyTo (im);
   im.adjustROI (0, 0, 0.5*images->first.width, 0);
+
+  imc.adjustROI (0, 0, 0, -0.5*images->first.width);
+  r_image.copyTo (imc);
+  imc.adjustROI (0, 0, -0.5*images->first.width, 0.5*images->first.width);
+  r_image.copyTo (imc);
+  imc.adjustROI (0, 0, 0.5*images->first.width, 0); */
 
   /*prepare image and pcl to be published for rospy*/
   std_msgs::Header header;
   header.frame_id = "ensenso_image";
   header.stamp = ros::Time::now();
   msg = cv_bridge::CvImage(header, encoding, im).toImageMsg();
+
+  std_msgs::Header c_header;
+  c_header.frame_id = "ensenso_image";
+  c_header.stamp = ros::Time::now();
+  cmsg = cv_bridge::CvImage(c_header, encoding, imc).toImageMsg();
 
   std_msgs::Header left_header;
   left_header.frame_id = "left_ensenso_image";
@@ -332,8 +351,8 @@ void callback (const PointCloudT::Ptr& cloud, \
   pcl2_msg.header.stamp = ros::Time::now();
   pcl2_msg.header.frame_id = "ensenso_cloud";
 
-  sensor_msgs::ImagePtr msg, left_msg, right_msg;
-  imagetoMsg(images, msg, left_msg, right_msg);
+  sensor_msgs::ImagePtr msg, left_msg, right_msg, cmsg;
+  imagetoMsg(images, msg, left_msg, right_msg, cmsg);
 
   if(print)
     ROS_INFO("fps: %f", ensenso_ptr->getFramesPerSecond());
@@ -341,7 +360,7 @@ void callback (const PointCloudT::Ptr& cloud, \
   /*Publish the image and cloud*/
   pclPub.publish(pcl2_msg);
   imagePub.publish(msg);
-
+  imageCorrectionPub.publish(cmsg);
   leftImagePub.publish(left_msg);
   rightImagePub.publish(right_msg);
 }
