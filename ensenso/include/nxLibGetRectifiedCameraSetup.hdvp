@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.1" halcon_version="12.0">
+<procedure name="nxLibGetRectifiedCameraSetup">
+<interface>
+<ic>
+<par name="AcqHandle" base_type="ctrl" dimension="0"/>
+</ic>
+<oc>
+<par name="CameraSetupModelID" base_type="ctrl" dimension="0"/>
+</oc>
+</interface>
+<body>
+<c>* Returns a CameraSetupModel for the given NxLib camera handle. </c>
+<c>* Note that this CameraSetupModel can only be used on rectified images.</c>
+<c></c>
+<l>F := 0.008</l>
+<c></c>
+<l>get_framegrabber_param(AcqHandle, 'Sensor/Size/\\0', Width)</l>
+<l>get_framegrabber_param(AcqHandle, 'Sensor/Size/\\1', Height)</l>
+<c></c>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Left/Camera/\\0/\\0', Fx)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Left/Camera/\\1/\\1', Fy)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Left/Camera/\\2/\\0', Cx)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Left/Camera/\\2/\\1', Cy)</l>
+<c></c>
+<l>CamParamL := [F, 0, 0, 0, 0, 0, F/Fx, F/Fy, Cx, Cy, Width, Height]</l>
+<c></c>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Right/Camera/\\0/\\0', Fx)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Right/Camera/\\1/\\1', Fy)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Right/Camera/\\2/\\0', Cx)</l>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Dynamic/Stereo/Right/Camera/\\2/\\1', Cy)</l>
+<c></c>
+<l>CamParamR := [F, 0, 0, 0, 0, 0, F/Fx, F/Fy, Cx, Cy, Width, Height]</l>
+<c></c>
+<l>get_framegrabber_param(AcqHandle, 'Calibration/Stereo/Baseline', Baseline)</l>
+<c></c>
+<l>PoseL := [0, 0, 0, 0, 0, 0, 0]</l>
+<l>PoseR := [Baseline * 0.001, 0, 0, 0, 0, 0, 0]</l>
+<c></c>
+<l>create_camera_setup_model (2, CameraSetupModelID)</l>
+<c></c>
+<l>set_camera_setup_cam_param (CameraSetupModelID, 0, 'area_scan_polynomial', CamParamL, PoseL)</l>
+<l>set_camera_setup_cam_param (CameraSetupModelID, 1, 'area_scan_polynomial', CamParamR, PoseR)</l>
+<c></c>
+<l>return ()</l>
+</body>
+<docu id="nxLibGetRectifiedCameraSetup">
+<short lang="de_DE">Returns a CameraSetupModel for the given NxLib camera handle. Note that this CameraSetupModel can only be used on the rectified images.</short>
+<parameters>
+<parameter id="AcqHandle">
+<default_type>integer</default_type>
+<description lang="de_DE">Framegrabber handle</description>
+<mixed_type>false</mixed_type>
+<multivalue>false</multivalue>
+<sem_type>framegrabber</sem_type>
+<type_list>
+<item>integer</item>
+</type_list>
+</parameter>
+<parameter id="CameraSetupModelID">
+<default_type>integer</default_type>
+<description lang="de_DE">Camera setup model</description>
+<mixed_type>false</mixed_type>
+<multivalue>false</multivalue>
+<sem_type>camera_setup_model</sem_type>
+<type_list>
+<item>integer</item>
+</type_list>
+</parameter>
+</parameters>
+</docu>
+</procedure>
+</hdevelop>
