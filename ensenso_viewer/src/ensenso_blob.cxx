@@ -343,7 +343,7 @@ private:
             double area = cv::contourArea(cv::Mat(contours[contourIdx]));
             double hullArea = cv::contourArea(cv::Mat(hull));
             double ratio = area / hullArea;
-            if (ratio < 0.85f || ratio >= std::numeric_limits<float>::max())
+            if (ratio < 0.95f || ratio >= std::numeric_limits<float>::max())
                 continue;
           }
 

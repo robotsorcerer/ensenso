@@ -97,6 +97,7 @@ add_definitions(${PCL_DEFINITIONS})
 ## Declare executable source files
 set(bridge_files src/ensenso_bridge.cxx
               src/pathfinder.cxx)
+set(reader_files src/pcdreader.cpp)
 
 add_library(pathfinder src/pathfinder.cxx src/factory_functions.cxx)
 add_library(savgol src/savgol.cxx)
@@ -109,6 +110,7 @@ ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${Boost_FILESYSTEM_LIBRARY}
 
 ## Declare a C++ executable
 add_executable(ensenso_bridge ${bridge_files})
+add_executable(pcdreader ${reader_files})
 
 install(TARGETS savgol pathfinder boostsender
       ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -121,4 +123,9 @@ install(DIRECTORY include/${PROJECT_NAME}/
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ensenso_bridge
 ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+)
+
+target_link_libraries(pcdreader
+${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+${Boost_FILESYSTEM_LIBRARY} -lm -ldl
 )
